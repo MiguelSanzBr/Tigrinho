@@ -1,4 +1,5 @@
 import { Tabs } from 'expo-router';
+import 'react-native-gesture-handler';
 
 export default function TabLayout() {
   return (
