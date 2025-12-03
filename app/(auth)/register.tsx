@@ -167,6 +167,7 @@ export default function RegisterScreen() {
       console.log("✅ Resultado do cadastro:", result);
 
       if (result.success) {
+       router.push("/login");
         Alert.alert(
           "Sucesso!",
           `Conta criada com sucesso!\n\nTempo de execução: ${result.time.toFixed(2)}ms`,

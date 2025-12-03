@@ -12,7 +12,8 @@ import {
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Link, useRouter } from "expo-router";
-import { SQLiteService } from "../../services/SQLiteService";
+// Certifique-se de que o caminho para o seu serviço SQLite está correto
+import { SQLiteService, User } from "../../services/SQLiteService";
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -29,13 +30,15 @@ export default function LoginScreen() {
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [isThemeLoaded, setIsThemeLoaded] = useState(false);
 
-  // Verificar usuário logado
+  // 1. Verificação inicial de usuário logado
   useEffect(() => {
     const checkLoggedUser = async () => {
       try {
         const loggedUser = await AsyncStorage.getItem("@loggedUser");
         if (loggedUser) {
-          router.replace("/Homescreen");
+          // Se houver um usuário logado, redireciona para a Homescreen
+          console.log(`✅ Usuário logado encontrado: ${loggedUser}. Redirecionando.`);
+          router.replace("/");
         }
       } catch (error) {
         console.error("Erro ao verificar usuário logado:", error);
@@ -44,7 +47,7 @@ export default function LoginScreen() {
     checkLoggedUser();
   }, []);
 
-  // Carregar tema
+  // 2. Carregar/Salvar Tema (Modo Escuro)
   useEffect(() => {
     const loadTheme = async () => {
       try {
@@ -61,7 +64,6 @@ export default function LoginScreen() {
     loadTheme();
   }, []);
 
-  // Salvar tema
   useEffect(() => {
     if (isThemeLoaded) {
       AsyncStorage.setItem("@themeMode", isDarkMode ? "dark" : "light").catch(
@@ -70,7 +72,7 @@ export default function LoginScreen() {
     }
   }, [isDarkMode, isThemeLoaded]);
 
-  // Inicializar SQLite
+  // 3. Inicializar SQLite
   useEffect(() => {
     const initializeSQLite = async () => {
       try {
@@ -86,6 +88,7 @@ export default function LoginScreen() {
     initializeSQLite();
   }, []);
 
+  // 4. Validação do formulário
   const validateForm = () => {
     const newErrors = {
       email: "",
@@ -108,6 +111,7 @@ export default function LoginScreen() {
     return !newErrors.email && !newErrors.password;
   };
 
+  // 5. Lógica de Login
   const handleLogin = async () => {
     if (!validateForm()) return;
 
@@ -120,8 +124,10 @@ export default function LoginScreen() {
 
     try {
       console.log("🔍 Buscando usuário no SQLite:", formData.email);
-      
-      const result = await SQLiteService.getUserByEmail(formData.email.trim());
+
+      // Sanitiza o email antes de buscar
+      const userEmail = formData.email.trim();
+      const result = await SQLiteService.getUserByEmail(userEmail);
 
       console.log("📊 Resultado da busca:", result);
 
@@ -132,24 +138,37 @@ export default function LoginScreen() {
         if (result.user.password === formData.password) {
           console.log("✅ Login bem-sucedido!");
 
+          // O OBJETO DO USUÁRIO A SER SALVO
+          const loggedUserData = {
+            id: result.user.id,
+            name: result.user.name,
+            email: result.user.email,
+          };
+
           try {
-            await AsyncStorage.setItem(
-              "@loggedUser",
-              result.user.name || result.user.email
-            );
+            // Salva o objeto completo (mantendo a lógica original)
+            await AsyncStorage.setItem("@loggedUser", JSON.stringify(loggedUserData));
+
+            // NOVO: Salva o e-mail separadamente para consistência entre as telas
+            await AsyncStorage.setItem("@loggedUserEmail", loggedUserData.email);
+
+            console.log("✅ Dados de login (incluindo e-mail) persistidos.");
+
           } catch (err) {
-            console.error("Erro ao salvar usuário logado:", err);
+            console.error("❌ Erro ao salvar usuário logado:", err);
+            Alert.alert("Erro de Persistência", "Ocorreu um erro ao salvar o estado de login.");
           }
-          
+          router.push("/");
           Alert.alert(
             "Sucesso!",
-            `Login realizado com sucesso usando SQLite!\n\nTempo de busca: ${result.time.toFixed(2)}ms`,
+            `Bem-vindo(a), ${result.user.name.split(' ')[0]}!\n\nTempo de busca: ${result.time.toFixed(2)}ms`,
             [
               {
                 text: "OK",
                 onPress: () => {
                   setFormData({ email: "", password: "" });
-                  router.replace("/Homescreen");
+                  // Redireciona para a tela principal (Homescreen)
+                  router.replace("/deposit"); // Sugestão: Redirecionar para depósito/home correta
                 },
               },
             ]
@@ -162,7 +181,7 @@ export default function LoginScreen() {
         console.log("❌ Usuário não encontrado:", result.error);
         Alert.alert(
           "Erro",
-          result.error || "Usuário não encontrado. Verifique seu email."
+          "Usuário não encontrado. Verifique seu email e senha."
         );
       }
     } catch (error) {
@@ -173,20 +192,22 @@ export default function LoginScreen() {
     }
   };
 
+  // 6. Temas e Estilos
   const theme = isDarkMode ? darkTheme : lightTheme;
 
+  // Tela de Loading (Enquanto o tema/SQLite inicializa)
   if (!isThemeLoaded || !sqliteInitialized) {
     return (
       <View
         style={{
           flex: 1,
-          backgroundColor: "#0f0b1a",
+          backgroundColor: isDarkMode ? "#0f0b1a" : "#f1f5f9",
           justifyContent: "center",
           alignItems: "center",
         }}
       >
-        <ActivityIndicator size="large" color="#93c5fd" />
-        <Text style={{ color: '#ffffff', marginTop: 10 }}>
+        <ActivityIndicator size="large" color={isDarkMode ? "#93c5fd" : "#2563eb"} />
+        <Text style={{ color: isDarkMode ? '#ffffff' : '#111827', marginTop: 10 }}>
           {!sqliteInitialized ? "Inicializando banco de dados..." : "Carregando..."}
         </Text>
       </View>
@@ -283,7 +304,7 @@ export default function LoginScreen() {
               ) : null}
             </View>
 
-            {/* Botão Esqueci Senha */}
+            {/* Botão Esqueci Senha (Não funcional) */}
             <TouchableOpacity style={styles.forgotPassword}>
               <Text style={[styles.linkText, { color: theme.link }]}>
                 Esqueceu sua senha?
@@ -297,16 +318,16 @@ export default function LoginScreen() {
                   styles.button,
                   styles.primaryButton,
                   { backgroundColor: theme.buttonBg },
-                  loading && styles.buttonDisabled,
+                  (loading || !sqliteInitialized) && styles.buttonDisabled,
                 ]}
                 onPress={handleLogin}
-                disabled={loading}
+                disabled={loading || !sqliteInitialized}
               >
                 {loading ? (
                   <ActivityIndicator color="white" />
                 ) : (
                   <Text style={styles.buttonText}>
-                    Entrar com SQLite
+                    Entrar
                   </Text>
                 )}
               </TouchableOpacity>
@@ -332,7 +353,7 @@ export default function LoginScreen() {
   );
 }
 
-// Temas
+// ---------- Temas (Copiados do seu Register) ----------
 const darkTheme = {
   background: "#0f0b1a",
   card: "rgba(255,255,255,0.06)",
@@ -361,7 +382,7 @@ const lightTheme = {
   buttonBorder: "#2563eb",
 };
 
-// Estilos
+// ---------- Estilos (Copiados e adaptados do seu Register) ----------
 const styles = StyleSheet.create({
   gradient: { flex: 1 },
   themeButton: {
@@ -408,6 +429,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 15,
+    textAlign: "center",
   },
   inputContainer: {
     marginBottom: 16,
