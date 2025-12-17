@@ -9,7 +9,6 @@ import {
   TextInput,
   Modal,
   StatusBar,
-  Dimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -43,7 +42,6 @@ import { SYMBOLS, SymbolType } from '../../components/CasinoIcons';
 const TouchableOpacityAnimated = Animated.createAnimatedComponent(TouchableOpacity);
 const SYMBOL_HEIGHT = 80;
 const REEL_WINDOW_HEIGHT = SYMBOL_HEIGHT;
-const { width, height } = Dimensions.get('window');
 
 // --- Componente REEL SIMPLIFICADO ---
 type ReelProps = {
@@ -65,10 +63,14 @@ const Reel = React.memo(({
   const spinAnimation = useRef<any>(null);
   const isAnimating = useSharedValue(false);
 
+  // Criação otimizada dos símbolos estendidos
   const extendedSymbols = React.useMemo(() => {
     return [...Array(15)].flatMap(() => allSymbols);
   }, [allSymbols]);
 
+  // Limpa animação pendente
+
+  // Efeito principal otimizado
   useEffect(() => {
     if (spinAnimation.current) {
       clearTimeout(spinAnimation.current);
@@ -76,17 +78,22 @@ const Reel = React.memo(({
 
     if (isSpinning) {
       isAnimating.value = true;
-      const spinDuration = 2000 + (index * 300);
+
+      // Calcula posições iniciais e finais
+      const startPosition = 0;
+      const spinDuration = 2000 + (index * 300); // Delay escalonado entre rolos
       const stopDelay = 500 + (index * 200);
 
+      // Fase 1: Giro rápido
       translateY.value = withTiming(
-        -(allSymbols.length * SYMBOL_HEIGHT * 20),
+        -(allSymbols.length * SYMBOL_HEIGHT * 20), // Gira muito
         {
           duration: spinDuration,
           easing: Easing.linear,
         }
       );
 
+      // Fase 2: Para na posição correta com delay
       spinAnimation.current = setTimeout(() => {
         if (!isAnimating.value) return;
 
@@ -109,6 +116,7 @@ const Reel = React.memo(({
       }, spinDuration + stopDelay);
 
     } else {
+      // Posição estática
       const targetIndex = allSymbols.findIndex(s => s.id === symbol.id);
       if (targetIndex !== -1) {
         translateY.value = withTiming(
@@ -157,6 +165,7 @@ const Reel = React.memo(({
 });
 
 Reel.displayName = 'Reel';
+// --- FIM DO COMPONENTE REEL ---
 
 export default function ProfessionalCasinoScreen() {
   const router = useRouter();
@@ -168,11 +177,17 @@ export default function ProfessionalCasinoScreen() {
   const [results, setResults] = useState<SymbolType[]>([SYMBOLS[0], SYMBOLS[0], SYMBOLS[0]]);
   const [winAmount, setWinAmount] = useState<number>(0);
   const [showWin, setShowWin] = useState<boolean>(false);
+  const [showWelcomeBonus, setShowWelcomeBonus] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [showWelcomeModal, setShowWelcomeModal] = useState<boolean>(false);
 
+
+  // Contador para rolos que já pararam
   const stoppedReels = useRef<number>(0);
+
+
+  // Referência para armazenar dados temporários da rotação atual
   const spinData = useRef<{
     results: SymbolType[];
     userId: string;
@@ -187,16 +202,18 @@ export default function ProfessionalCasinoScreen() {
   const loadingProgress = useSharedValue(0);
   const welcomeModalScale = useSharedValue(0.8);
   const welcomeModalOpacity = useSharedValue(0);
-
   const updateBalanceWithAnimation = async (newBalance: number) => {
     balanceAnimation.value = 0;
+
     balanceAnimation.value = withTiming(1, {
       duration: 800,
       easing: Easing.out(Easing.cubic)
     });
+
     setBalance(newBalance);
   };
 
+  // 2. FUNÇÃO DE RECARGA DINÂMICA (useCallback, agora pode acessar updateBalanceWithAnimation)
   const reFetchBalance = useCallback(async () => {
     try {
       const email = await AsyncStorage.getItem('@loggedUserEmail');
@@ -208,28 +225,36 @@ export default function ProfessionalCasinoScreen() {
       await SQLiteService.init();
       const userResult = await SQLiteService.getUserByEmail(email);
 
+      // CORREÇÃO: 'setResults.success' não existe. Deve ser 'userResult.success'
       if (userResult.success && userResult.user) {
         const newBalanceValue = Number(userResult.user.balance) || 0;
         await updateBalanceWithAnimation(newBalanceValue);
       } else {
+        console.warn('Usuário não encontrado ao recarregar saldo:', email);
         setBalance(50);
       }
+
     } catch (error) {
-      console.error('Erro ao recarregar saldo:', error);
+      console.error('Erro ao recarregar saldo dinamicamente:', error);
       setBalance(50);
     }
-  }, [updateBalanceWithAnimation]);
+  }, [updateBalanceWithAnimation]); // Dependência: Função de Animação
 
+  // 3. HOOK DE FOCO (useFocusEffect, agora pode acessar reFetchBalance)
   useFocusEffect(
     useCallback(() => {
       if (!isLoading) {
         reFetchBalance();
       }
-      return () => {};
+
+      return () => {
+        // Cleanup
+      };
     }, [isLoading, reFetchBalance])
   );
+  const getBonusKey = (email: string) => `@bonusClaimed:${email}`;
 
-  // Loading inicial
+  // Efeito de loading inicial
   useEffect(() => {
     loadingProgress.value = withTiming(1, {
       duration: 2000,
@@ -243,7 +268,7 @@ export default function ProfessionalCasinoScreen() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Efeito de brilho
+  // Efeito de brilho contínuo
   useEffect(() => {
     const animateGlow = () => {
       glowOpacity.value = withSequence(
@@ -260,8 +285,11 @@ export default function ProfessionalCasinoScreen() {
   const loadBalance = async () => {
     try {
       setIsLoading(true);
+
+      // Verifica se já mostrou modal de boas-vindas antes de verificar login
       const welcomeShown = await AsyncStorage.getItem('@firstTimeVisit');
 
+      // Se for primeira visita, mostra modal imediatamente
       if (!welcomeShown) {
         setTimeout(() => {
           setShowWelcomeModal(true);
@@ -271,11 +299,15 @@ export default function ProfessionalCasinoScreen() {
           });
           welcomeModalOpacity.value = withTiming(1, { duration: 300 });
         }, 1500);
+
+        // Marca que já mostrou o modal
         await AsyncStorage.setItem('@firstTimeVisit', 'true');
       }
 
       const email = await AsyncStorage.getItem('@loggedUserEmail');
+
       if (!email) {
+        // Se não tem usuário logado, mostra modal de boas-vindas primeiro
         setTimeout(() => {
           setShowWelcomeModal(true);
           welcomeModalScale.value = withSpring(1, {
@@ -284,11 +316,14 @@ export default function ProfessionalCasinoScreen() {
           });
           welcomeModalOpacity.value = withTiming(1, { duration: 300 });
         }, 1500);
-        setBalance(50);
+
+        // Não impede o acesso - permite jogar sem login (ou redireciona depois)
+        setBalance(50); // Saldo inicial para testar
         return;
       }
 
       setUserEmail(email);
+
       await SQLiteService.init();
       const userResult = await SQLiteService.getUserByEmail(email);
 
@@ -296,8 +331,11 @@ export default function ProfessionalCasinoScreen() {
         const balanceValue = Number(userResult.user.balance) || 0;
         setBalance(balanceValue);
 
+        // Verifica se já deu bônus de R$ 50,00
         const bonusGiven = await AsyncStorage.getItem(`@bonusGiven:${email}`);
+
         if (!bonusGiven) {
+          // Dá bônus de R$ 50,00 para novo usuário
           const bonusAmount = 50;
           const result = await SQLiteService.createTransaction({
             userId: userResult.user.id,
@@ -308,17 +346,23 @@ export default function ProfessionalCasinoScreen() {
           });
 
           if (result.success) {
+            // Atualiza saldo
             const updatedUser = await SQLiteService.getUserByEmail(email);
             if (updatedUser.success && updatedUser.user) {
               setBalance(Number(updatedUser.user.balance));
             }
+
+            // Marca que já deu bônus
             await AsyncStorage.setItem(`@bonusGiven:${email}`, 'true');
+
+            // Atualiza mensagem do modal se ainda estiver aberto
             setTimeout(() => {
               Alert.alert('🎉 Bônus Adicionado!', `R$ ${bonusAmount.toFixed(2)} foram adicionados à sua conta!`);
             }, 2000);
           }
         }
       } else {
+        // Se usuário não existe no banco, ainda mostra modal
         setTimeout(() => {
           setShowWelcomeModal(true);
           welcomeModalScale.value = withSpring(1, {
@@ -327,15 +371,18 @@ export default function ProfessionalCasinoScreen() {
           });
           welcomeModalOpacity.value = withTiming(1, { duration: 300 });
         }, 1500);
-        setBalance(50);
+
+        setBalance(50); // Saldo inicial para testar
       }
 
       balanceAnimation.value = withTiming(1, {
         duration: 1000,
         easing: Easing.out(Easing.cubic)
       });
+
     } catch (error) {
       console.error('Erro ao carregar saldo:', error);
+      // Mesmo com erro, mostra modal de boas-vindas
       setTimeout(() => {
         setShowWelcomeModal(true);
         welcomeModalScale.value = withSpring(1, {
@@ -344,17 +391,74 @@ export default function ProfessionalCasinoScreen() {
         });
         welcomeModalOpacity.value = withTiming(1, { duration: 300 });
       }, 1500);
-      setBalance(50);
+      setBalance(50); // Saldo inicial para testar
     } finally {
       setIsLoading(false);
     }
   };
+  const handleWelcomeClose = async (goToLogin: boolean = false) => {
+    try {
+      // Animações de saída
+      welcomeModalScale.value = withTiming(0.8, { duration: 200 });
+      welcomeModalOpacity.value = withTiming(0, { duration: 200 }, () => {
+        runOnJS(setShowWelcomeModal)(false);
 
-  const handleWelcomeClose = async () => {
-    welcomeModalScale.value = withTiming(0.8, { duration: 200 });
-    welcomeModalOpacity.value = withTiming(0, { duration: 200 }, () => {
-      runOnJS(setShowWelcomeModal)(false);
-    });
+        // Se foi solicitado ir para login
+        if (goToLogin) {
+          runOnJS(router.push)('/login');
+        }
+      });
+
+    } catch (error) {
+      console.error('Erro ao fechar modal:', error);
+      setShowWelcomeModal(false);
+
+      // Ainda redireciona se houve erro
+      if (goToLogin) {
+        router.push('/login');
+      }
+    }
+  };
+  const claimWelcomeBonus = async () => {
+    if (!userEmail || balance === null) return;
+
+    try {
+      const bonusKey = getBonusKey(userEmail);
+      const bonusClaimed = await AsyncStorage.getItem(bonusKey);
+
+      if (!bonusClaimed) {
+        const bonusAmount = 30;
+
+        const userResult = await SQLiteService.getUserByEmail(userEmail);
+        if (!userResult.success || !userResult.user) {
+          Alert.alert('Erro', 'Usuário indisponível para bônus.');
+          return;
+        }
+
+        const result = await SQLiteService.createTransaction({
+          userId: userResult.user.id,
+          type: "deposit",
+          amount: bonusAmount,
+          description: "Bônus de Boas-Vindas do Cassino",
+          status: "completed",
+        });
+
+        if (result.success) {
+          await loadBalance();
+          await AsyncStorage.setItem(bonusKey, 'true');
+          setShowWelcomeBonus(false);
+
+          setTimeout(() => {
+            Alert.alert('🎉 Bônus Ativado!', `Parabéns! Você ganhou R$ ${bonusAmount.toFixed(2)} de bônus!`);
+          }, 500);
+        } else {
+          Alert.alert('Erro', 'Não foi possível registrar o bônus no DB.');
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao ativar bônus:', error);
+      Alert.alert('Erro', 'Ocorreu um erro ao resgatar o bônus.');
+    }
   };
 
   const getWeightedRandomSymbol = (): SymbolType => {
@@ -370,18 +474,23 @@ export default function ProfessionalCasinoScreen() {
     return SYMBOLS[0];
   };
 
+  // Callback quando um reel para
   const handleReelStop = (index: number) => {
     stoppedReels.current += 1;
+    console.log(`Rolo ${index + 1} parou. Total parado: ${stoppedReels.current}`);
+    // Quando todos os 3 rolos pararem
     if (stoppedReels.current === 3 && spinData.current) {
       processWin(spinData.current.results, spinData.current.userId);
     }
   };
 
+  // Processa vitória separadamente
   const processWin = async (spinResults: SymbolType[], userId: string) => {
     const symbols = spinResults.map(r => r.id);
     let multiplier = 0;
     let winMessage = '';
 
+    // Verifica combinações
     if (symbols[0] === symbols[1] && symbols[1] === symbols[2]) {
       const symbol = spinResults[0];
       if (symbol.weight <= 3) multiplier = 50;
@@ -395,17 +504,19 @@ export default function ProfessionalCasinoScreen() {
     }
 
     const winValue = spinData.current?.betAmount ? spinData.current.betAmount * multiplier : 0;
-
+    console.log('Valor da vitória calculado:', winValue, 'userEmail:', userEmail);
     if (winValue > 0 && userEmail) {
       setWinAmount(winValue);
+
       const winDepositResult = await SQLiteService.createTransaction({
         userId: userId,
         type: "deposit",
         amount: winValue,
-        description: `🏆 Vitória Cassino - ${winMessage} - R$ ${winValue.toFixed(2)}`,
+        description: `🏆 Vitória Cassino - ${winMessage} - R$ ${winValue.toFixed(2)}`, // ← NOVA DESCRIÇÃO
         status: "completed",
       });
-
+      console.log(winDepositResult, "feito a vitoria no db")
+      console.log('Cassino - userId:', userId);
       if (winDepositResult.success) {
         const updatedUserResult = await SQLiteService.getUserByEmail(userEmail);
         let finalBalance = balance || 0;
@@ -415,12 +526,14 @@ export default function ProfessionalCasinoScreen() {
         }
 
         await updateBalanceWithAnimation(finalBalance);
+
         winPulse.value = withSequence(
           withSpring(1),
           withDelay(2000, withSpring(0))
         );
 
         setShowWin(true);
+
         setTimeout(() => {
           Alert.alert('🎊 Parabéns!', `${winMessage}\nVocê ganhou R$ ${winValue.toFixed(2)}!`);
         }, 1500);
@@ -433,19 +546,23 @@ export default function ProfessionalCasinoScreen() {
       }, 1000);
     }
 
+    // Reseta estados
     setIsSpinning(false);
     stoppedReels.current = 0;
     spinData.current = null;
   };
 
+  // Função de giro simplificada
   const spin = async () => {
     if (isSpinning || balance === null || balance < betAmount || !userEmail) return;
 
+    // Prepara para nova rotação
     setIsSpinning(true);
     setWinAmount(0);
     setShowWin(false);
     stoppedReels.current = 0;
 
+    // Animação de clique
     machineScale.value = withSequence(
       withSpring(0.95),
       withSpring(1)
@@ -460,11 +577,13 @@ export default function ProfessionalCasinoScreen() {
       }
 
       const userId = userResult.user.id;
+
+      // Deduz aposta
       const deductionResult = await SQLiteService.createTransaction({
         userId: userId,
         type: "withdraw",
         amount: betAmount,
-        description: `🎰 Aposta Cassino - R$ ${betAmount.toFixed(2)}`,
+        description: `🎰 Aposta Cassino - R$ ${betAmount.toFixed(2)}`, // ← NOVA DESCRIÇÃO
         status: "completed",
       });
 
@@ -472,6 +591,7 @@ export default function ProfessionalCasinoScreen() {
         throw new Error(deductionResult.error || 'Falha ao deduzir a aposta');
       }
 
+      // Atualiza saldo local
       const updatedUserResult = await SQLiteService.getUserByEmail(userEmail);
       if (updatedUserResult.success && updatedUserResult.user) {
         const finalBalance = Number(updatedUserResult.user.balance) || 0;
@@ -480,19 +600,23 @@ export default function ProfessionalCasinoScreen() {
         setBalance(balance - betAmount);
       }
 
+      // Gera resultados
       const newResults = [
         getWeightedRandomSymbol(),
         getWeightedRandomSymbol(),
         getWeightedRandomSymbol()
       ];
 
+      // Armazena dados da rotação atual
       spinData.current = {
         results: newResults,
         userId,
         betAmount
       };
 
+      // Atualiza resultados (dispara animação)
       setResults(newResults);
+
     } catch (error) {
       console.error('Erro no giro:', error);
       Alert.alert('Erro', error instanceof Error ? error.message : 'Erro ao processar a aposta');
@@ -502,12 +626,16 @@ export default function ProfessionalCasinoScreen() {
     }
   };
 
+
+
   const handleCustomBet = () => {
     const amount = parseFloat(customBet.replace(',', '.'));
+
     if (isNaN(amount) || amount < 1 || balance === null || amount > balance) {
       Alert.alert('Valor Inválido', `Digite um valor entre R$ 1,00 e R$ ${balance?.toFixed(2) || '0.00'}`);
       return;
     }
+
     setBetAmount(amount);
     setShowBetModal(false);
     setCustomBet('');
@@ -546,7 +674,6 @@ export default function ProfessionalCasinoScreen() {
     opacity: welcomeModalOpacity.value,
   }));
 
-  // Componentes de UI
   const PayoutItem = ({ symbol }: { symbol: SymbolType }) => {
     const SymbolComponent = symbol.component;
     let multiplier = '10x';
@@ -555,16 +682,13 @@ export default function ProfessionalCasinoScreen() {
     else if (symbol.weight <= 8) multiplier = '15x';
 
     return (
-      <View style={styles.payoutCard}>
-        <View style={[styles.payoutIcon, { backgroundColor: `${symbol.color}15` }]}>
-          <SymbolComponent size={28} />
+      <View style={styles.payoutItem}>
+        <View style={[styles.payoutSymbol, { borderColor: symbol.color }]}>
+          <SymbolComponent size={35} />
         </View>
         <View style={styles.payoutInfo}>
           <Text style={styles.payoutName}>{symbol.name}</Text>
-          <Text style={styles.payoutMultiplier}>{multiplier}</Text>
-          <Text style={styles.payoutChance}>
-            Chance: {((1 / symbol.weight) * 100).toFixed(1)}%
-          </Text>
+          <Text style={styles.payoutMultiplier}>3x = {multiplier}</Text>
         </View>
       </View>
     );
@@ -577,6 +701,11 @@ export default function ProfessionalCasinoScreen() {
           <Ionicons name="diamond" size={30} color="#FFD700" />
         </View>
         <Text style={styles.loadingText}>Carregando Cassino...</Text>
+        <View style={styles.loadingDots}>
+          <Animated.View style={styles.dot} />
+          <Animated.View style={styles.dot} />
+          <Animated.View style={styles.dot} />
+        </View>
       </Animated.View>
     </View>
   );
@@ -589,127 +718,141 @@ export default function ProfessionalCasinoScreen() {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0C0A1D" />
 
-      {/* Header Premium Simplificado */}
+      {/* Header */}
       <View style={styles.header}>
+        {/* Fundo gradiente para o header */}
         <View style={styles.headerBackground} />
+
+        {/* Conteúdo do header */}
         <View style={styles.headerContent}>
-          {/* Botão do Menu */}
+          {/* Botão de voltar elegante */}
           <TouchableOpacity
-            onPress={() => router.push('/profile')}
-            style={styles.menuButton}
+            onPress={() => router.back()}
+            style={styles.backButton}
+            activeOpacity={0.7}
           >
-            <Ionicons name="menu" size={24} color="#FFD700" />
+            <View style={styles.backButtonInner}>
+              <Ionicons name="chevron-back" size={22} color="#FFD700" />
+            </View>
           </TouchableOpacity>
 
-          {/* Título Central */}
+          {/* Título central com efeito premium */}
           <View style={styles.titleSection}>
-            <Text style={styles.titleMain}>TIGRINHO</Text>
-            <Text style={styles.titleSub}>Premium Casino</Text>
+            <View style={styles.titleContainer}>
+              <Text style={styles.titleMain}>TIGRINHO</Text>
+              <Text style={styles.titleSub}>CASINO PREMIUM</Text>
+            </View>
+            <Animated.View style={[styles.titleGlow, glowAnimatedStyle]} />
           </View>
 
-          {/* Saldo */}
+          {/* Seção de saldo sofisticada */}
           <TouchableOpacity
-            style={styles.balanceBadge}
-            onPress={() => router.push('/deposit')}
+            style={styles.balanceSection}
+            onPress={() => router.push('(tabs)/deposit')}
+            activeOpacity={0.8}
           >
-            <Ionicons name="wallet" size={16} color="#FFD700" />
-            <Animated.Text style={[styles.balanceAmount, balanceAnimatedStyle]}>
-              R$ {balance?.toFixed(2) || '0.00'}
-            </Animated.Text>
+            {/* Badge de saldo */}
+            <View style={styles.balanceBadge}>
+              {/* Linha superior decorativa */}
+              <View style={styles.balanceTopLine} />
+
+              <View style={styles.balanceIconContainer}>
+                <Ionicons name="add-circle" size={20} color="#FFD700" />
+              </View>
+
+              <View style={styles.balanceInfo}>
+                <View style={styles.balanceAmountContainer}>
+                  <Text style={styles.currencySymbol}>R$</Text>
+                  <Animated.Text style={[styles.balanceAmount, balanceAnimatedStyle]}>
+                    {balance?.toFixed(2) || '0.00'}
+                  </Animated.Text>
+                </View>
+              </View>
+
+            </View>
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Conteúdo Principal - Apenas a Máquina e Apostas Rápidas */}
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={styles.content}>
         {/* Máquina Cassino */}
-        <Animated.View style={[styles.machineContainer, machineAnimatedStyle]}>
+        <Animated.View style={[styles.machine, machineAnimatedStyle]}>
           {showWin && (
-            <Animated.View style={[styles.winBanner, winAnimatedStyle]}>
-              <Text style={styles.winText}>🏆 +R$ {winAmount.toFixed(2)}</Text>
+            <Animated.View style={[styles.winDisplay, winAnimatedStyle]}>
+              <Text style={styles.winText}>+R$ {winAmount.toFixed(2)}</Text>
             </Animated.View>
           )}
 
-          <View style={styles.machine}>
-            <View style={styles.reelsPanel}>
-              <View style={styles.reelsContainer}>
-                {results.map((symbol, index) => (
-                  <Reel
-                    key={index}
-                    symbol={symbol}
-                    index={index}
-                    isSpinning={isSpinning}
-                    allSymbols={SYMBOLS}
-                    onStop={handleReelStop}
-                  />
-                ))}
-              </View>
-              <View style={styles.reelsFrame} />
+          {/* Painel das Roletas */}
+          <View style={styles.reelsPanel}>
+            <View style={styles.reelsContainer}>
+              {results.map((symbol, index) => (
+                <Reel
+                  key={index}
+                  symbol={symbol}
+                  index={index}
+                  isSpinning={isSpinning}
+                  allSymbols={SYMBOLS}
+                  onStop={handleReelStop}
+                />
+              ))}
             </View>
+          </View>
 
-            <View style={styles.controlPanel}>
-              <View style={styles.betSection}>
-                <Text style={styles.betLabel}>Valor da Aposta</Text>
-                <View style={styles.betAmountSection}>
-                  <TouchableOpacity
-                    style={styles.betAmountDisplay}
-                    onPress={() => setShowBetModal(true)}
-                  >
-                    <Text style={styles.betAmountValue}>R$ {betAmount.toFixed(2)}</Text>
-                    <Ionicons name="create-outline" size={18} color="#FFD700" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
+          {/* Painel de Controle */}
+          <View style={styles.controlPanel}>
+            <View style={styles.betDisplay}>
+              <Text style={styles.betLabel}>APOSTA ATUAL</Text>
               <TouchableOpacity
-                style={[
-                  styles.spinButton,
-                  (isSpinning || balance === null || balance < betAmount) && styles.spinButtonDisabled
-                ]}
-                onPress={spin}
-                disabled={isSpinning || balance === null || balance < betAmount}
+                onPress={() => setShowBetModal(true)}
+                style={styles.betAmountButton}
               >
-                <View style={styles.spinButtonContent}>
-                  {isSpinning ? (
-                    <>
-                      <Ionicons name="refresh" size={24} color="#0C0A1D" />
-                      <Text style={styles.spinButtonText}>GIRANDO...</Text>
-                    </>
-                  ) : (
-                    <>
-                      <Ionicons name="play-circle" size={32} color="#0C0A1D" />
-                      <Text style={styles.spinButtonText}>GIRAR ROLETAS</Text>
-                    </>
-                  )}
-                </View>
+                <Text style={styles.betAmountText}>R$ {betAmount.toFixed(2)}</Text>
+                <Ionicons name="pencil" size={16} color="#FFD700" />
               </TouchableOpacity>
             </View>
+
+            <TouchableOpacityAnimated
+              style={[
+                styles.spinButton,
+                (isSpinning || balance === null || balance < betAmount) && styles.spinButtonDisabled
+              ]}
+              onPress={spin}
+              disabled={isSpinning || balance === null || balance < betAmount}
+            >
+              <Ionicons
+                name={isSpinning ? "refresh" : "play"}
+                size={32}
+                color="#0C0A1D"
+              />
+              <Text style={styles.spinButtonText}>
+                {isSpinning ? 'GIRANDO...' : 'GIRAR'}
+              </Text>
+            </TouchableOpacityAnimated>
           </View>
         </Animated.View>
 
         {/* Apostas Rápidas */}
-        <View style={styles.quickBetsSection}>
-          <Text style={styles.sectionTitle}>Apostas Rápidas</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.quickBetsScroll}>
+        <View style={styles.quickBets}>
+          <Text style={styles.quickBetsTitle}>APOSTA RÁPIDA</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {[1, 5, 10, 25, 50, 100].map((amount) => (
               <TouchableOpacity
                 key={amount}
                 style={[
-                  styles.quickBetCard,
-                  betAmount === amount && styles.quickBetCardActive,
-                  (balance === null || balance < amount) && styles.quickBetCardDisabled
+                  styles.quickBetButton,
+                  betAmount === amount && styles.quickBetButtonActive,
+                  (balance === null || balance < amount) && styles.quickBetButtonDisabled
                 ]}
                 onPress={() => setBetAmount(amount)}
                 disabled={balance === null || balance < amount}
               >
                 <Text style={[
-                  styles.quickBetAmount,
-                  betAmount === amount && styles.quickBetAmountActive
+                  styles.quickBetText,
+                  betAmount === amount && styles.quickBetTextActive,
+                  (balance === null || balance < amount) && styles.quickBetTextDisabled
                 ]}>
                   R$ {amount}
-                </Text>
-                <Text style={styles.quickBetMultiplier}>
-                  {amount === 100 ? 'MAX' : amount / betAmount === 1 ? 'ATUAL' : `${(amount / betAmount).toFixed(0)}x`}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -717,13 +860,8 @@ export default function ProfessionalCasinoScreen() {
         </View>
 
         {/* Tabela de Pagamentos */}
-        <View style={styles.payoutsSection}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Tabela de Pagamentos</Text>
-            <TouchableOpacity onPress={() => Alert.alert('Como Funciona', 'Combine 3 símbolos iguais para ganhar!')}>
-              <Ionicons name="information-circle" size={20} color="#FFD700" />
-            </TouchableOpacity>
-          </View>
+        <View style={styles.payouts}>
+          <Text style={styles.payoutsTitle}>TABELA DE PAGAMENTOS</Text>
           <View style={styles.payoutsGrid}>
             {SYMBOLS.map((symbol) => (
               <PayoutItem key={symbol.id} symbol={symbol} />
@@ -732,7 +870,7 @@ export default function ProfessionalCasinoScreen() {
         </View>
       </ScrollView>
 
-      {/* Modal de Boas-Vindas */}
+      {/* Modal de Boas-Vindas (NOVO) */}
       <Modal
         visible={showWelcomeModal}
         transparent
@@ -744,34 +882,109 @@ export default function ProfessionalCasinoScreen() {
           <Animated.View style={[styles.welcomeModalContent, welcomeModalAnimatedStyle]}>
             <View style={styles.welcomeIconContainer}>
               <Ionicons name="trophy" size={70} color="#FFD700" />
+              <View style={styles.sparkleIcon}>
+                <Ionicons name="sparkles" size={30} color="#FFD700" />
+              </View>
             </View>
-            
-            <Text style={styles.welcomeTitle}>🎉 Bem-vindo! 🎉</Text>
-            <Text style={styles.welcomeSubtitle}>Ao Cassino Premium</Text>
-            
+
+            <Text style={styles.welcomeTitle}>🎉 BEM-VINDO AO CASSINO! 🎉</Text>
+            <Text style={styles.welcomeSubtitle}>Seu Universo de Diversão e Prêmios</Text>
+
             <View style={styles.welcomeFeatures}>
               <View style={styles.featureItem}>
-                <Ionicons name="diamond" size={20} color="#FFD700" />
+                <Ionicons name="diamond" size={24} color="#FFD700" />
                 <Text style={styles.featureText}>Jogos emocionantes</Text>
               </View>
               <View style={styles.featureItem}>
-                <Ionicons name="cash" size={20} color="#FFD700" />
-                <Text style={styles.featureText}>Prêmios reais</Text>
+                <Ionicons name="cash" size={24} color="#FFD700" />
+                <Text style={styles.featureText}>Prêmios incríveis</Text>
               </View>
               <View style={styles.featureItem}>
-                <Ionicons name="shield-checkmark" size={20} color="#FFD700" />
-                <Text style={styles.featureText}>100% seguro</Text>
+                <Ionicons name="shield-checkmark" size={24} color="#FFD700" />
+                <Text style={styles.featureText}>Jogo seguro</Text>
               </View>
             </View>
-            
+
+            <View style={styles.welcomePointsContainer}>
+              <Text style={styles.welcomePointsTitle}>PONTOS PARA TESTAR!</Text>
+              <View style={styles.pointsDisplay}>
+                <Ionicons name="logo-bitcoin" size={40} color="#FFD700" />
+                <View>
+                  <Text style={styles.pointsAmount}>R$ {balance?.toFixed(2) || '0.00'}</Text>
+                  <Text style={styles.pointsDescription}>Saldo inicial para jogar</Text>
+                </View>
+              </View>
+            </View>
+
+            <Text style={styles.welcomeMessage}>
+              Divirta-se com nossa máquina caça-níqueis!{'\n'}
+              Experimente diferentes apostas e veja sua sorte!{'\n\n'}
+              <Text style={styles.tipText}>💡 Dica: Comece com apostas baixas para se familiarizar!</Text>
+            </Text>
+
             <TouchableOpacity
               style={styles.startPlayingButton}
               onPress={handleWelcomeClose}
+              activeOpacity={0.8}
             >
               <Ionicons name="play-circle" size={28} color="#0C0A1D" />
-              <Text style={styles.startPlayingButtonText}>Começar a Jogar</Text>
+              <Text style={styles.startPlayingButtonText}>COMEÇAR A JOGAR</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.howToPlayButton}
+              onPress={() => {
+                handleWelcomeClose();
+                Alert.alert('Como Jogar',
+                  '1. Escolha o valor da aposta\n' +
+                  '2. Clique em GIRAR\n' +
+                  '3. Combine 3 símbolos iguais para ganhar\n' +
+                  '4. 2 símbolos iguais também dão prêmio!\n\n' +
+                  'Divirta-se e boa sorte! 🍀'
+                );
+              }}
+            >
+              <Text style={styles.howToPlayText}>Como jogar?</Text>
             </TouchableOpacity>
           </Animated.View>
+        </View>
+      </Modal>
+
+      {/* Modal de Bônus de Boas-Vindas (EXISTENTE) */}
+      <Modal
+        visible={showWelcomeBonus}
+        transparent
+        animationType="fade"
+        onRequestClose={claimWelcomeBonus}
+      >
+        <View style={styles.bonusModalOverlay}>
+          <View style={styles.bonusModalContent}>
+            <View style={styles.welcomeIcon}>
+              <Ionicons name="gift" size={60} color="#FFD700" />
+            </View>
+            <Text style={styles.welcomeTitle}>🎉 BÔNUS ESPECIAL! 🎉</Text>
+            <Text style={styles.welcomeSubtitle}>Presente de Boas-Vindas</Text>
+
+            <View style={styles.bonusContainer}>
+              <Ionicons name="logo-bitcoin" size={30} color="#FFD700" />
+              <Text style={styles.bonusAmount}>+ R$ 30,00</Text>
+            </View>
+
+            <Text style={styles.welcomeMessage}>
+              Parabéns! Você acaba de ganhar R$ 30,00 de bônus para começar a jogar!
+              {"\n\n"}
+              Seu saldo é agora de
+              <Text style={styles.totalAmount}> R$ {(balance !== null ? balance : 0) + 30.00}</Text>
+            </Text>
+
+            <TouchableOpacity
+              style={styles.claimButton}
+              onPress={claimWelcomeBonus}
+            >
+              <Ionicons name="sparkles" size={24} color="#0C0A1D" />
+              <Text style={styles.claimButtonText}>RESGATAR BÔNUS</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </Modal>
 
@@ -785,33 +998,30 @@ export default function ProfessionalCasinoScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Valor da Aposta</Text>
-            <Text style={styles.modalSubtitle}>
-              Saldo disponível: R$ {balance?.toFixed(2) || '0.00'}
-            </Text>
-            
+
             <TextInput
               style={styles.betInput}
-              placeholder="Digite o valor..."
-              placeholderTextColor="#64748B"
+              placeholder={`R$ 1,00 - R$ ${balance?.toFixed(2) || '0.00'}`}
+              placeholderTextColor="#666"
               keyboardType="decimal-pad"
               value={customBet}
               onChangeText={setCustomBet}
               autoFocus
             />
-            
-            <View style={styles.modalActions}>
+
+            <View style={styles.modalButtons}>
               <TouchableOpacity
-                style={styles.modalButtonSecondary}
+                style={styles.modalButtonCancel}
                 onPress={() => setShowBetModal(false)}
               >
-                <Text style={styles.modalButtonTextSecondary}>Cancelar</Text>
+                <Text style={styles.modalButtonTextCancel}>Cancelar</Text>
               </TouchableOpacity>
-              
+
               <TouchableOpacity
-                style={styles.modalButtonPrimary}
+                style={styles.modalButtonConfirm}
                 onPress={handleCustomBet}
               >
-                <Text style={styles.modalButtonTextPrimary}>Confirmar</Text>
+                <Text style={styles.modalButtonTextConfirm}>Confirmar</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -821,463 +1031,26 @@ export default function ProfessionalCasinoScreen() {
   );
 }
 
+// ----------------------------------------------------
+// 🎨 ESTILOS (ATUALIZADOS COM NOVOS ESTILOS)
+// ----------------------------------------------------
 const styles = StyleSheet.create({
+  // ====================
+  // ESTILOS GERAIS
+  // ====================
   container: {
     flex: 1,
     backgroundColor: '#0C0A1D',
   },
-  
-  // Header
-  header: {
-    backgroundColor: '#0C0A1D',
-    paddingTop: 55,
-    paddingBottom: 15,
-  },
-  headerBackground: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#0C0A1D',
-  },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-  },
-  menuButton: {
-    padding: 8,
-  },
-  titleSection: {
-    alignItems: 'center',
-  },
-  titleMain: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#FFD700',
-    letterSpacing: 1,
-    marginBottom: 2,
-  },
-  titleSub: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: 'rgba(255, 215, 0, 0.7)',
-    letterSpacing: 0.5,
-  },
-  balanceBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1A1636',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    gap: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 215, 0, 0.2)',
-  },
-  balanceAmount: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFD700',
-  },
-  
-  // Content
   content: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
-  
-  // Machine
-  machineContainer: {
-    marginTop: 20,
-    marginBottom: 30,
-  },
-  machine: {
-    backgroundColor: '#1A1636',
-    borderRadius: 20,
-    overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: '#FFD700',
-  },
-  winBanner: {
-    position: 'absolute',
-    top: -20,
-    alignSelf: 'center',
-    zIndex: 100,
-    backgroundColor: '#10B981',
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-    borderRadius: 20,
-    borderWidth: 2,
-    borderColor: '#FFD700',
-  },
-  winText: {
-    color: '#FFF',
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  reelsPanel: {
+    flexGrow: 1,
     padding: 20,
-    position: 'relative',
+    paddingTop: 10,
   },
-  reelsContainer: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  reelContainer: {
-    flex: 1,
-    alignItems: 'center',
-    position: 'relative',
-  },
-  reelWindow: {
-    width: '100%',
-    height: SYMBOL_HEIGHT * 3,
-    borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: '#0C0A1D',
-  },
-  reelContent: {
-    alignItems: 'center',
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-  },
-  symbolWrapper: {
-    height: SYMBOL_HEIGHT,
-    width: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  reelOverlay: {
-    position: 'absolute',
-    top: SYMBOL_HEIGHT,
-    left: 0,
-    right: 0,
-    height: SYMBOL_HEIGHT,
-    backgroundColor: 'rgba(255, 215, 0, 0.05)',
-    borderTopWidth: 2,
-    borderBottomWidth: 2,
-    borderColor: '#FFD700',
-    zIndex: 1,
-  },
-  reelIndicator: {
-    position: 'absolute',
-    top: SYMBOL_HEIGHT,
-    left: 0,
-    right: 0,
-    height: 2,
-    backgroundColor: '#FFD700',
-    zIndex: 2,
-  },
-  reelsFrame: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderWidth: 4,
-    borderColor: '#0C0A1D',
-    borderRadius: 16,
-    pointerEvents: 'none',
-  },
-  
-  // Control Panel
-  controlPanel: {
-    padding: 20,
-    backgroundColor: '#0C0A1D',
-    borderTopWidth: 2,
-    borderTopColor: '#1A1636',
-  },
-  betSection: {
-    marginBottom: 20,
-  },
-  betLabel: {
-    color: '#94A3B8',
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  betAmountSection: {
-    alignItems: 'center',
-  },
-  betAmountDisplay: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1A1636',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: '#FFD700',
-    gap: 12,
-  },
-  betAmountValue: {
-    color: '#FFD700',
-    fontSize: 28,
-    fontWeight: '800',
-  },
-  spinButton: {
-    backgroundColor: '#FFD700',
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  spinButtonDisabled: {
-    backgroundColor: '#334155',
-    opacity: 0.5,
-  },
-  spinButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 20,
-    gap: 12,
-  },
-  spinButtonText: {
-    color: '#0C0A1D',
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  
-  // Quick Bets
-  quickBetsSection: {
-    marginBottom: 30,
-  },
-  sectionTitle: {
-    color: '#FFF',
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 16,
-  },
-  quickBetsScroll: {
-    flexDirection: 'row',
-  },
-  quickBetCard: {
-    backgroundColor: '#1A1636',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderRadius: 12,
-    marginRight: 12,
-    alignItems: 'center',
-    minWidth: 100,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 215, 0, 0.1)',
-  },
-  quickBetCardActive: {
-    backgroundColor: '#FFD700',
-    borderColor: '#FFD700',
-  },
-  quickBetCardDisabled: {
-    opacity: 0.4,
-  },
-  quickBetAmount: {
-    color: '#FFD700',
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  quickBetAmountActive: {
-    color: '#0C0A1D',
-  },
-  quickBetMultiplier: {
-    fontSize: 12,
-    color: '#94A3B8',
-  },
-  
-  // Payouts
-  payoutsSection: {
-    marginBottom: 40, // Aumentado para dar mais espaço no final
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  payoutsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  payoutCard: {
-    width: (width - 52) / 2,
-    backgroundColor: '#1A1636',
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 215, 0, 0.1)',
-  },
-  payoutIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  payoutInfo: {
-    flex: 1,
-  },
-  payoutName: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  payoutMultiplier: {
-    color: '#FFD700',
-    fontSize: 16,
-    fontWeight: '800',
-    marginBottom: 2,
-  },
-  payoutChance: {
-    color: '#94A3B8',
-    fontSize: 12,
-  },
-  
-  // Modals
-  welcomeModalOverlay: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.95)',
-    padding: 20,
-  },
-  welcomeModalContent: {
-    backgroundColor: '#1A1636',
-    borderRadius: 24,
-    padding: 32,
-    width: '100%',
-    maxWidth: 400,
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#FFD700',
-  },
-  welcomeIconContainer: {
-    marginBottom: 20,
-  },
-  welcomeTitle: {
-    color: '#FFD700',
-    fontSize: 28,
-    fontWeight: '800',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  welcomeSubtitle: {
-    color: '#FFF',
-    fontSize: 18,
-    fontWeight: '600',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  welcomeFeatures: {
-    width: '100%',
-    marginBottom: 32,
-  },
-  featureItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 215, 0, 0.1)',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 8,
-  },
-  featureText: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: '500',
-    marginLeft: 12,
-    flex: 1,
-  },
-  startPlayingButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FFD700',
-    width: '100%',
-    paddingVertical: 18,
-    borderRadius: 16,
-    gap: 12,
-  },
-  startPlayingButtonText: {
-    color: '#0C0A1D',
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    padding: 20,
-  },
-  modalContent: {
-    backgroundColor: '#1A1636',
-    borderRadius: 20,
-    padding: 24,
-    width: '100%',
-    maxWidth: 400,
-  },
-  modalTitle: {
-    color: '#FFF',
-    fontSize: 24,
-    fontWeight: '700',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  modalSubtitle: {
-    color: '#94A3B8',
-    fontSize: 14,
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  betInput: {
-    backgroundColor: '#0C0A1D',
-    color: '#FFF',
-    padding: 16,
-    borderRadius: 12,
-    fontSize: 18,
-    textAlign: 'center',
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  modalActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  modalButtonSecondary: {
-    flex: 1,
-    backgroundColor: '#334155',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  modalButtonTextSecondary: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  modalButtonPrimary: {
-    flex: 1,
-    backgroundColor: '#FFD700',
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  modalButtonTextPrimary: {
-    color: '#0C0A1D',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  
-  // Loading
+
+  // ====================
+  // ESTILOS DE CARREGAMENTO (Loading) ⏳
+  // ====================
   loadingContainer: {
     flex: 1,
     backgroundColor: '#0C0A1D',
@@ -1287,6 +1060,10 @@ const styles = StyleSheet.create({
   loadingSkeleton: {
     alignItems: 'center',
     padding: 40,
+    backgroundColor: '#1A1636',
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: '#FFD700',
   },
   loadingSpinner: {
     marginBottom: 20,
@@ -1294,7 +1071,802 @@ const styles = StyleSheet.create({
   loadingText: {
     color: '#FFD700',
     fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  loadingDots: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  dot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#FFD700',
+    marginHorizontal: 4,
+    opacity: 0.6,
+  },
+
+  // ====================
+  // HEADER CORRIGIDO - LAYOUT HORIZONTAL
+  // ====================
+  header: {
+    backgroundColor: '#0C0A1D',
+    paddingTop: 55,
+    paddingBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 215, 0, 0.15)',
+    elevation: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    position: 'relative',
+    zIndex: 100,
+    overflow: 'hidden',
+  },
+  headerBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(12, 10, 29, 0.95)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 215, 0, 0.1)',
+  },
+  headerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    position: 'relative',
+    height: 60, // Altura fixa para o conteúdo do header
+  },
+  backButton: {
+    width: 46,
+    height: 46,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  backButtonInner: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 215, 0, 0.08)',
+    borderWidth: 1.2,
+    borderColor: 'rgba(255, 215, 0, 0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  titleSection: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    maxWidth: 150, // Largura máxima para o título
+  },
+  titleContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  titleMain: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#FFD700',
+    letterSpacing: 1.8,
+    textTransform: 'uppercase',
+    textAlign: 'center',
+    textShadowColor: 'rgba(255, 215, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
+    marginBottom: 2,
+    lineHeight: 22, // Ajuste para alinhamento vertical
+  },
+  titleSub: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.6)',
+    letterSpacing: 2.5,
+    textTransform: 'uppercase',
+    textAlign: 'center',
+    lineHeight: 12, // Ajuste para alinhamento vertical
+  },
+  titleGlow: {
+    width: 120,
+    height: 2,
+    backgroundColor: '#FFD700',
+    borderRadius: 1,
+    marginTop: 4,
+    opacity: 0.6,
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 8,
+  },
+  balanceSection: {
+    marginLeft: 8,
+    minWidth: 130,
+    flexShrink: 0, // Impede que encolha demais
+  },
+  balanceBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(26, 22, 54, 0.9)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 215, 0, 0.15)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+    position: 'relative',
+    overflow: 'hidden',
+    height: 50, // Altura fixa para o badge do saldo
+    justifyContent: 'space-between', // Distribui os itens uniformemente
+  },
+  balanceTopLine: {
+    position: 'absolute',
+    top: 0,
+    left: '15%',
+    right: '15%',
+    height: 1,
+    backgroundColor: 'rgba(255, 215, 0, 0.25)',
+    borderTopLeftRadius: 1,
+    borderTopRightRadius: 1,
+  },
+  balanceIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 215, 0, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 215, 0, 0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+    flexShrink: 0, // Não encolhe
+  },
+  balanceInfo: {
+    flex: 1,
+    marginRight: 8,
+  },
+  balanceLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: 'rgba(255, 215, 0, 0.7)',
+    letterSpacing: 0.9,
+    marginBottom: 2,
+    textTransform: 'uppercase',
+    textAlign: 'left',
+  },
+  balanceAmountContainer: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    flexWrap: 'nowrap', // Não quebra linha
+  },
+  currencySymbol: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFD700',
+    marginRight: 2,
+    opacity: 0.9,
+  },
+  balanceAmount: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#FFD700',
+    letterSpacing: 0.5,
+    textShadowColor: 'rgba(255, 215, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 4,
+    flexShrink: 1, // Pode encolher um pouco se necessário
+    minWidth: 60, // Largura mínima para o valor
+  },
+  balanceAction: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingLeft: 8,
+    borderLeftWidth: 1,
+    borderLeftColor: 'rgba(255, 215, 0, 0.15)',
+    minWidth: 36,
+    flexShrink: 0, // Não encolhe
+  },
+  balanceActionText: {
+    fontSize: 8,
+    fontWeight: '900',
+    color: '#FFD700',
+    letterSpacing: 0.8,
+    marginTop: 2,
+    textTransform: 'uppercase',
+    textAlign: 'center',
+  },
+  // ====================
+  // ESTILOS DA MÁQUINA (Slot Machine) 🎰
+  // ====================
+  machine: {
+    backgroundColor: '#1A1636',
+    borderRadius: 24,
+    padding: 28,
+    marginBottom: 25,
+    borderWidth: 4,
+    borderColor: '#FFD700',
+    elevation: 20,
+    marginTop: 10,
+    position: 'relative',
+  },
+  machineShadow: {
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 25,
+  },
+  reelsPanel: {
+    backgroundColor: '#0C0A1D',
+    borderRadius: 18,
+    padding: 18,
+    marginBottom: 25,
+    borderWidth: 2.5,
+    borderColor: '#FFD700',
+  },
+  reelsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  reelContainer: {
+    alignItems: 'center',
+    position: 'relative',
+    flex: 1,
+  },
+  reelWindow: {
+    width: '100%',
+    // Nota: 'REEL_WINDOW_HEIGHT' deve ser uma constante definida fora de 'styles'.
+    height: REEL_WINDOW_HEIGHT,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#1A1636',
+    position: 'relative',
+  },
+  reelContent: {
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+  },
+  symbolWrapper: {
+    // Nota: 'SYMBOL_HEIGHT' deve ser uma constante definida fora de 'styles'.
+    height: SYMBOL_HEIGHT,
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  reelOverlay: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    borderRadius: 12,
+    borderWidth: 3,
+    backgroundColor: 'transparent',
+    zIndex: 2,
+  },
+  reelIndicator: {
+    position: 'absolute',
+    width: '100%',
+    height: 4,
+    backgroundColor: '#FFD700',
+    top: '50%',
+    marginTop: -2,
+    elevation: 8,
+    zIndex: 3,
+  },
+  reelIndicatorShadow: {
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.9,
+    shadowRadius: 5,
+  },
+  winDisplay: {
+    position: 'absolute',
+    top: -25,
+    alignSelf: 'center',
+    backgroundColor: '#10B981',
+    paddingHorizontal: 30,
+    paddingVertical: 12,
+    borderRadius: 24,
+    zIndex: 10,
+    elevation: 15,
+    borderWidth: 3,
+    borderColor: '#FFD700',
+  },
+  winDisplayShadow: {
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 1,
+    shadowRadius: 12,
+  },
+  winText: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: 1,
+    textShadow: '0px 2px 4px rgba(0, 0, 0, 0.5)',
+  },
+
+  // ====================
+  // ESTILOS DO PAINEL DE CONTROLE 🕹️
+  // ====================
+  controlPanel: {
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  betDisplay: {
+    alignItems: 'center',
+    marginBottom: 25,
+  },
+  betLabel: {
+    color: '#FFD700',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    marginBottom: 10,
+  },
+  betAmountButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,215,0,0.15)',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: '#FFD700',
+    gap: 8,
+  },
+  betAmountText: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: 'bold',
+    letterSpacing: 1,
+  },
+  spinButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFD700',
+    width: '80%',
+    paddingVertical: 18,
+    borderRadius: 30,
+    borderWidth: 4,
+    borderColor: '#FFF8E1',
+    elevation: 10,
+    gap: 12,
+  },
+  spinButtonShadow: {
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 1,
+    shadowRadius: 15,
+  },
+  spinButtonDisabled: {
+    backgroundColor: '#383000',
+    borderColor: '#666',
+    elevation: 0,
+  },
+  spinButtonDisabledShadow: {
+    shadowOpacity: 0.3,
+  },
+  spinButtonText: {
+    color: '#0C0A1D',
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+  },
+  quickBets: {
+    marginBottom: 25,
+  },
+  quickBetsTitle: {
+    color: '#FFD700',
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  quickBetButton: {
+    backgroundColor: '#1A1636',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginHorizontal: 5,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 215, 0, 0.3)',
+    minWidth: 80,
+    alignItems: 'center',
+  },
+  quickBetButtonActive: {
+    backgroundColor: '#FFD700',
+    borderColor: '#FFFFFF',
+  },
+  quickBetButtonDisabled: {
+    opacity: 0.4,
+    borderColor: '#333',
+  },
+  quickBetText: {
+    color: '#FFD700',
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  quickBetTextActive: {
+    color: '#0C0A1D',
+    fontWeight: '900',
+  },
+  quickBetTextDisabled: {
+    color: '#AAA',
+  },
+
+  // ====================
+  // ESTILOS DA TABELA DE PAGAMENTOS (Payouts) 🏆
+  // ====================
+  payouts: {
+    backgroundColor: '#1A1636',
+    borderRadius: 18,
+    padding: 15,
+    borderWidth: 1,
+    borderColor: '#333',
+    marginBottom: 20,
+  },
+  payoutsTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 15,
+    textAlign: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+    paddingBottom: 10,
+  },
+  payoutsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  payoutItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '48%', // Ajustado para 48% para dar espaço ao gap
+    padding: 10,
+    backgroundColor: '#0C0A1D',
+    borderRadius: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: '#FFD700',
+    marginBottom: 5,
+  },
+  payoutSymbol: {
+    padding: 5,
+    borderRadius: 8,
+    borderWidth: 2,
+    marginRight: 10,
+  },
+  payoutInfo: {
+    flex: 1,
+  },
+  payoutName: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  payoutMultiplier: {
+    color: '#FFD700',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+
+  // ====================
+  // ESTILOS DO MODAL DE APOSTAS (Bet Modal) 💰
+  // ====================
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+  },
+  modalContent: {
+    backgroundColor: '#1A1636',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 30,
+    alignItems: 'center',
+    borderTopWidth: 5,
+    borderTopColor: '#FFD700',
+  },
+  modalTitle: {
+    color: '#FFD700',
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 20,
+  },
+  betInput: {
+    width: '100%',
+    backgroundColor: '#0C0A1D',
+    color: '#FFFFFF',
+    padding: 15,
+    borderRadius: 10,
+    fontSize: 18,
+    textAlign: 'center',
+    marginBottom: 30,
+    borderWidth: 1,
+    borderColor: '#FFD700',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    gap: 15,
+  },
+  modalButtonCancel: {
+    flex: 1,
+    backgroundColor: '#666',
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  modalButtonTextCancel: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  modalButtonConfirm: {
+    flex: 1,
+    backgroundColor: '#FFD700',
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  modalButtonTextConfirm: {
+    color: '#0C0A1D',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+
+  // ====================
+  // ESTILOS DO MODAL DE BOAS-VINDAS (Welcome Modal) 🎉
+  // ====================
+  welcomeModalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.95)',
+    padding: 20,
+  },
+  welcomeModalContent: {
+    backgroundColor: '#1A1636',
+    borderRadius: 30,
+    padding: 35,
+    width: '100%',
+    maxWidth: 400,
+    alignItems: 'center',
+    borderWidth: 5,
+    borderColor: '#FFD700',
+    elevation: 30,
+  },
+  welcomeModalContentShadow: {
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.9,
+    shadowRadius: 30,
+  },
+  welcomeIconContainer: {
+    position: 'relative',
+    marginBottom: 20,
+  },
+  sparkleIcon: {
+    position: 'absolute',
+    top: -10,
+    right: -10,
+    backgroundColor: 'rgba(255, 215, 0, 0.2)',
+    borderRadius: 20,
+    padding: 5,
+  },
+  welcomeTitle: {
+    color: '#FFD700',
+    fontSize: 26,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginBottom: 8,
+    letterSpacing: 1.2,
+    textShadow: '0px 0px 15px rgba(255, 215, 0, 0.7)',
+  },
+  welcomeSubtitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
     fontWeight: '600',
     textAlign: 'center',
+    marginBottom: 25,
+  },
+  welcomeFeatures: {
+    width: '100%',
+    marginBottom: 25,
+  },
+  featureItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 215, 0, 0.1)',
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 10,
+  },
+  featureText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '500',
+    marginLeft: 12,
+    flex: 1,
+  },
+  welcomePointsContainer: {
+    width: '100%',
+    backgroundColor: 'rgba(255, 215, 0, 0.15)',
+    borderRadius: 15,
+    padding: 20,
+    marginBottom: 25,
+    borderWidth: 2,
+    borderColor: '#FFD700',
+  },
+  welcomePointsTitle: {
+    color: '#FFD700',
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 15,
+    letterSpacing: 1,
+  },
+  pointsDisplay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pointsAmount: {
+    color: '#FFD700',
+    fontSize: 32,
+    fontWeight: '900',
+    marginLeft: 15,
+  },
+  pointsDescription: {
+    color: '#CCCCCC',
+    fontSize: 14,
+    marginLeft: 15,
+    marginTop: 4,
+  },
+  welcomeMessage: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 30,
+  },
+  tipText: {
+    color: '#FFD700',
+    fontWeight: '600',
+    fontStyle: 'italic',
+  },
+  startPlayingButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFD700',
+    width: '100%',
+    paddingVertical: 18,
+    borderRadius: 25,
+    elevation: 10,
+    marginBottom: 15,
+    gap: 10,
+  },
+  startPlayingButtonShadow: {
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.8,
+    shadowRadius: 12,
+  },
+  startPlayingButtonText: {
+    color: '#0C0A1D',
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: 1.5,
+  },
+  howToPlayButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+  },
+  howToPlayText: {
+    color: '#FFD700',
+    fontSize: 16,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+
+  // ====================
+  // ESTILOS DO MODAL DE BÔNUS (Bonus Modal) 🎁
+  // ====================
+  bonusModalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+  },
+  bonusModalContent: {
+    backgroundColor: '#1A1636',
+    borderRadius: 20,
+    padding: 35,
+    margin: 20,
+    alignItems: 'center',
+    borderWidth: 5,
+    borderColor: '#FFD700',
+    elevation: 25,
+  },
+  bonusModalContentShadow: {
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 20,
+  },
+  welcomeIcon: {
+    marginBottom: 20,
+    padding: 15,
+    borderRadius: 50,
+    backgroundColor: 'rgba(255, 215, 0, 0.1)',
+    borderWidth: 2,
+    borderColor: '#FFD700',
+  },
+  bonusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 25,
+    padding: 10,
+    backgroundColor: 'rgba(255, 215, 0, 0.15)',
+    borderRadius: 10,
+  },
+  bonusAmount: {
+    color: '#FFD700',
+    fontSize: 30,
+    fontWeight: '900',
+    marginLeft: 10,
+  },
+  totalAmount: {
+    fontWeight: 'bold',
+    color: '#10B981',
+  },
+  claimButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFD700',
+    paddingHorizontal: 30,
+    paddingVertical: 15,
+    borderRadius: 25,
+    elevation: 8,
+    gap: 10,
+  },
+  claimButtonShadow: {
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.8,
+    shadowRadius: 10,
+  },
+  claimButtonText: {
+    color: '#0C0A1D',
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: 1.5,
   },
 });

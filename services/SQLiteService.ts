@@ -448,7 +448,6 @@ export const SQLiteService = {
   async init(): Promise<void> {
     try {
       await SQLiteImplementation.init();
-      console.log('✅ SQLiteService inicializado com sucesso');
     } catch (error) {
       console.error('❌ Falha na inicialização do SQLiteService:', error);
       throw error;
