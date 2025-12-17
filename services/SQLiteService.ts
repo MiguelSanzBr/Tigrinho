@@ -1,28 +1,19 @@
-// services/SQLiteService.ts (Versão Integrada e Atualizada)
 import { Platform } from 'react-native';
-// Certifique-se de que WebSQLiteService existe e implementa todos os métodos
-// necessários, ou remova-o/adapte-o se não for relevante ou estiver em outro lugar.
 import { WebSQLiteService } from './WebSQLiteService'; 
+import * as SQLite from 'expo-sqlite';
 
-/**
- * Interface para representar um Usuário no banco de dados.
- * O campo 'balance' foi adicionado.
- */
 export interface User {
   id: string;
   name: string;
   email: string;
   password: string;
-  balance: number; // Novo campo
+  balance: number;
   createdAt: string;
 }
 
-/**
- * Interface para representar uma Transação no banco de dados.
- */
 export interface Transaction {
   id: string;
-  userId: string; // Chave estrangeira para a tabela users
+  userId: string;
   type: 'deposit' | 'withdraw' | 'payment' | 'transfer';
   amount: number;
   description: string;
@@ -30,652 +21,465 @@ export interface Transaction {
   createdAt: string;
 }
 
-// Verifica se a plataforma é web para escolher a implementação
 const isWeb = Platform.OS === 'web';
 
-/**
- * Implementação do serviço SQLite para Mobile (Expo-SQLite).
- * Inclui lógica para a tabela 'users' (com 'balance') e 'transactions'.
- */
 class NativeSQLiteService {
-  private db: any = null;
+  private db: SQLite.SQLiteDatabase | null = null;
   private initialized = false;
+  private initializationPromise: Promise<void> | null = null;
 
   /**
-   * Inicializa o banco de dados e cria as tabelas 'users' e 'transactions'.
+   * Inicializa o banco de dados com tratamento robusto de erros
    */
   async init(): Promise<void> {
-    if (isWeb) return; // Não inicializar no web
+    if (isWeb) return;
+    
+    // Evita múltiplas inicializações simultâneas
+    if (this.initializationPromise) {
+      return this.initializationPromise;
+    }
+
+    this.initializationPromise = (async () => {
+      try {
+        console.log('🔄 Inicializando SQLite...');
+        
+        // Abre o banco de dados
+        this.db = await SQLite.openDatabaseAsync('finances.db');
+        
+        if (!this.db) {
+          throw new Error('Falha ao abrir o banco de dados');
+        }
+
+        console.log('✅ Banco de dados aberto com sucesso');
+
+        // Executa as queries de inicialização
+        await this.db.execAsync(`
+          PRAGMA journal_mode = WAL;
+          PRAGMA foreign_keys = ON;
+        `);
+
+        // Cria tabela users
+        await this.db.execAsync(`
+          CREATE TABLE IF NOT EXISTS users (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL,
+            balance REAL DEFAULT 0.0,
+            createdAt TEXT NOT NULL
+          );
+        `);
+
+        // Cria tabela transactions
+        await this.db.execAsync(`
+          CREATE TABLE IF NOT EXISTS transactions (
+            id TEXT PRIMARY KEY,
+            userId TEXT NOT NULL,
+            type TEXT NOT NULL,
+            amount REAL NOT NULL,
+            description TEXT,
+            status TEXT DEFAULT 'completed',
+            createdAt TEXT NOT NULL,
+            FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
+          );
+        `);
+
+        this.initialized = true;
+        console.log('✅ Tabelas criadas com sucesso');
+        
+      } catch (error: any) {
+        console.error('❌ Erro fatal na inicialização do SQLite:', error);
+        this.db = null;
+        this.initialized = false;
+        
+        // Relança o erro para ser tratado pelo chamador
+        throw new Error(`Falha na inicialização do banco de dados: ${error.message}`);
+      }
+    })();
+
+    return this.initializationPromise;
+  }
+
+  /**
+   * Helper seguro para obter instância do banco de dados
+   */
+  private async getDb(): Promise<SQLite.SQLiteDatabase> {
+    // Se não está na web e não foi inicializado, tenta inicializar
+    if (!isWeb && !this.initialized) {
+      try {
+        await this.init();
+      } catch (error) {
+        throw new Error('Banco de dados não inicializado. Chame SQLiteService.init() primeiro.');
+      }
+    }
+
+    if (!this.db) {
+      throw new Error('Instância do banco de dados não disponível');
+    }
+
+    return this.db;
+  }
+
+  /**
+   * Versão modificada do createTransaction sem transactionAsync
+   */
+  async createTransaction(transaction: Omit<Transaction, 'id' | 'createdAt'>): Promise<{ 
+    success: boolean; 
+    time: number; 
+    transaction?: Transaction; 
+    error?: string 
+  }> {
+    const startTime = performance.now();
     
     try {
-      const SQLite = require('expo-sqlite');
-      // Alterado o nome do banco para refletir o novo contexto de finanças (se desejar)
-      this.db = SQLite.openDatabase('finances.db'); 
+      const db = await this.getDb();
       
-      return new Promise((resolve, reject) => {
-        this.db.transaction(
-          (tx: any) => {
-            // 1. Tabela de usuários (com 'balance' e tipo REAL)
-            tx.executeSql(
-              `CREATE TABLE IF NOT EXISTS users (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                email TEXT UNIQUE NOT NULL,
-                password TEXT NOT NULL,
-                balance REAL DEFAULT 0.0,
-                createdAt TEXT NOT NULL
-              );`,
-              [],
-              () => {}, // Sucesso na criação de users
-              (_: any, error: any) => {
-                reject(error);
-                return false;
-              }
-            );
-
-            // 2. Tabela de transações (relacionada com users)
-            tx.executeSql(
-              `CREATE TABLE IF NOT EXISTS transactions (
-                id TEXT PRIMARY KEY,
-                userId TEXT NOT NULL,
-                type TEXT NOT NULL,
-                amount REAL NOT NULL,
-                description TEXT,
-                status TEXT DEFAULT 'completed',
-                createdAt TEXT NOT NULL,
-                FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE
-              );`,
-              [],
-              () => {
-                this.initialized = true;
-                console.log('✅ Banco de dados inicializado com tabelas relacionadas');
-                resolve();
-              },
-              (_: any, error: any) => {
-                reject(error);
-                return false;
-              }
-            );
-          },
-          (error: any) => reject(error)
+      const newTransaction: Transaction = {
+        ...transaction,
+        id: Date.now().toString(),
+        createdAt: new Date().toISOString(),
+      };
+      
+      // Inicia transação manualmente
+      await db.execAsync('BEGIN TRANSACTION');
+      
+      try {
+        // 1. Verifica se o usuário existe
+        const userResult = await db.getFirstAsync(
+          'SELECT * FROM users WHERE id = ?', 
+          [transaction.userId]
         );
-      });
-    } catch (error) {
-      console.error('Erro ao inicializar SQLite Mobile:', error);
-      throw error;
-    }
-  }
-
-  // --- MÉTODOS DE USUÁRIO (AJUSTADOS PARA NOVO CAMPO 'balance') ---
-
-  /**
-   * Salva um novo usuário (verifica email duplicado).
-   * Omitimos 'id', 'createdAt' e 'balance' na entrada, o 'balance' é 0.0 por padrão.
-   */
-  async saveUser(user: Omit<User, 'id' | 'createdAt' | 'balance'>): Promise<{ success: boolean; time: number; user?: User; error?: string }> {
-    const startTime = performance.now();
-    
-    if (!this.initialized) {
-      const endTime = performance.now();
-      return {
-        success: false,
-        time: endTime - startTime,
-        error: 'SQLite não inicializado'
-      };
-    }
-
-    return new Promise((resolve) => {
-      this.db.transaction(
-        (tx: any) => {
-          // PRIMEIRO verificar se o email já existe
-          tx.executeSql(
-            'SELECT * FROM users WHERE email = ?',
-            [user.email],
-            (_: any, { rows }: any) => {
-              if (rows.length > 0) {
-                const endTime = performance.now();
-                resolve({ 
-                  success: false, 
-                  time: endTime - startTime,
-                  error: 'Email já cadastrado'
-                });
-                return;
-              }
-
-              // Se não existe, então inserir
-              const newUser: User = {
-                ...user,
-                balance: 0.0, // Inicia o saldo em zero
-                id: Date.now().toString(),
-                createdAt: new Date().toISOString(),
-              };
-
-              tx.executeSql(
-                `INSERT INTO users (id, name, email, password, balance, createdAt) 
-                 VALUES (?, ?, ?, ?, ?, ?)`,
-                [newUser.id, newUser.name, newUser.email, newUser.password, newUser.balance, newUser.createdAt],
-                (_: any, result: any) => {
-                  const endTime = performance.now();
-                  resolve({ 
-                    success: true, 
-                    time: endTime - startTime,
-                    user: newUser
-                  });
-                },
-                (_: any, error: any) => {
-                  const endTime = performance.now();
-                  resolve({ 
-                    success: false, 
-                    time: endTime - startTime,
-                    error: error.message
-                  });
-                  return false;
-                }
-              );
-            },
-            (_: any, error: any) => {
-              const endTime = performance.now();
-              resolve({ 
-                success: false, 
-                time: endTime - startTime,
-                error: error.message
-              });
-              return false;
-            }
-          );
-        },
-        (error: any) => {
-          const endTime = performance.now();
-          resolve({ 
-            success: false, 
-            time: endTime - startTime,
-            error: error.message
-          });
+        
+        if (!userResult) {
+          throw new Error('Usuário não encontrado');
         }
-      );
-    });
-  }
 
-  /**
-   * Busca um usuário pelo email.
-   */
-  async getUserByEmail(
-    email: string
-  ): Promise<{ success: boolean; time: number; user?: User; error?: string }> {
-    const startTime = performance.now();
+        const user = userResult as User;
+        let newBalance = user.balance;
 
-    if (!this.initialized) {
-      const endTime = performance.now();
-      return {
-        success: false,
-        time: endTime - startTime,
-        error: "SQLite não inicializado",
-      };
-    }
-
-    return new Promise((resolve) => {
-      this.db.transaction((tx: any) => {
-        tx.executeSql(
-          "SELECT * FROM users WHERE email = ? LIMIT 1",
-          [email.trim()],
-          (_: any, { rows }: any) => {
-            const endTime = performance.now();
-            if (rows.length > 0) {
-              // O campo 'item(0)' retorna o primeiro objeto da linha
-              resolve({
-                success: true,
-                time: endTime - startTime,
-                user: rows.item(0) as User,
-              });
-            } else {
-              resolve({
-                success: false,
-                time: endTime - startTime,
-                error: "Usuário não encontrado",
-              });
-            }
-          },
-          (_: any, error: any) => {
-            const endTime = performance.now();
-            resolve({
-              success: false,
-              time: endTime - startTime,
-              error: error.message,
-            });
-            return false;
+        // 2. Calcula o novo saldo
+        if (transaction.type === 'deposit') {
+          newBalance += transaction.amount;
+        } else if (transaction.type === 'withdraw') {
+          if (user.balance < transaction.amount) {
+            throw new Error('Saldo insuficiente');
           }
+          newBalance -= transaction.amount;
+        }
+
+        // 3. Atualiza o saldo do usuário
+        await db.runAsync(
+          'UPDATE users SET balance = ? WHERE id = ?',
+          [newBalance, transaction.userId]
         );
-      });
-    });
-  }
 
-  /**
-   * Busca um usuário pelo ID (método novo para transações).
-   */
-  async getUserById(id: string): Promise<{ success: boolean; time: number; user?: User; error?: string }> {
-    const startTime = performance.now();
-    
-    if (!this.initialized) {
-      const endTime = performance.now();
+        // 4. Insere a transação
+        await db.runAsync(
+          `INSERT INTO transactions (id, userId, type, amount, description, status, createdAt) 
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [
+            newTransaction.id,
+            newTransaction.userId,
+            newTransaction.type,
+            newTransaction.amount,
+            newTransaction.description || '',
+            newTransaction.status,
+            newTransaction.createdAt
+          ]
+        );
+
+        // Confirma a transação
+        await db.execAsync('COMMIT');
+        
+        return {
+          success: true,
+          time: performance.now() - startTime,
+          transaction: newTransaction
+        };
+
+      } catch (error: any) {
+        // Reverte em caso de erro
+        await db.execAsync('ROLLBACK').catch(rollbackError => {
+          console.error('Erro ao fazer rollback:', rollbackError);
+        });
+        throw error;
+      }
+
+    } catch (error: any) {
+      console.error('Erro em createTransaction:', error);
       return {
         success: false,
-        time: endTime - startTime,
-        error: 'SQLite não inicializado'
+        time: performance.now() - startTime,
+        error: `Erro de Transação: ${error.message}`
       };
     }
-
-    return new Promise((resolve) => {
-      this.db.transaction(
-        (tx: any) => {
-          tx.executeSql(
-            'SELECT * FROM users WHERE id = ?',
-            [id],
-            (_: any, { rows }: any) => {
-              const endTime = performance.now();
-              const user = rows.length > 0 ? rows.item(0) : undefined;
-              resolve({ 
-                success: true, 
-                time: endTime - startTime,
-                user 
-              });
-            },
-            (_: any, error: any) => {
-              const endTime = performance.now();
-              resolve({ 
-                success: false, 
-                time: endTime - startTime,
-                error: error.message
-              });
-              return false;
-            }
-          );
-        },
-        (error: any) => {
-          const endTime = performance.now();
-          resolve({ 
-            success: false, 
-            time: endTime - startTime,
-            error: error.message
-          });
-        }
-      );
-    });
   }
 
-  /**
-   * Retorna todos os usuários.
-   */
-  async getAllUsers(): Promise<{ success: boolean; time: number; users: User[]; error?: string }> {
+  // Métodos auxiliares para depuração
+  async checkDatabaseStatus(): Promise<{ 
+    isInitialized: boolean; 
+    hasDbInstance: boolean;
+    isWeb: boolean 
+  }> {
+    return {
+      isInitialized: this.initialized,
+      hasDbInstance: !!this.db,
+      isWeb
+    };
+  }
+
+  async testConnection(): Promise<boolean> {
+    try {
+      const db = await this.getDb();
+      const result = await db.getFirstAsync('SELECT 1 as test');
+      return !!result;
+    } catch (error) {
+      console.error('Teste de conexão falhou:', error);
+      return false;
+    }
+  }
+
+  // Outros métodos permanecem iguais...
+  async saveUser(user: Omit<User, 'id' | 'createdAt' | 'balance'>) {
     const startTime = performance.now();
     
-    if (!this.initialized) {
-      const endTime = performance.now();
+    try {
+      const db = await this.getDb();
+      
+      const existingUser = await db.getFirstAsync(
+        'SELECT * FROM users WHERE email = ?', 
+        [user.email]
+      );
+      
+      if (existingUser) {
+        return {
+          success: false,
+          time: performance.now() - startTime,
+          error: 'Email já cadastrado'
+        };
+      }
+
+      const newUser: User = {
+        ...user,
+        balance: 0.0,
+        id: Date.now().toString(),
+        createdAt: new Date().toISOString(),
+      };
+
+      await db.runAsync(
+        `INSERT INTO users (id, name, email, password, balance, createdAt) 
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [newUser.id, newUser.name, newUser.email, newUser.password, newUser.balance, newUser.createdAt]
+      );
+
+      return {
+        success: true,
+        time: performance.now() - startTime,
+        user: newUser
+      };
+
+    } catch (error: any) {
+      console.error('Erro em saveUser:', error);
       return {
         success: false,
-        time: endTime - startTime,
+        time: performance.now() - startTime,
+        error: error.message
+      };
+    }
+  }
+
+  async getUserByEmail(email: string) {
+    const startTime = performance.now();
+
+    try {
+      const db = await this.getDb();
+      const user = await db.getFirstAsync(
+        'SELECT * FROM users WHERE email = ?', 
+        [email.trim()]
+      ) as User | undefined;
+
+      if (user) {
+        return {
+          success: true,
+          time: performance.now() - startTime,
+          user: user,
+        };
+      } else {
+        return {
+          success: false,
+          time: performance.now() - startTime,
+          error: 'Usuário não encontrado',
+        };
+      }
+    } catch (error: any) {
+      console.error('Erro em getUserByEmail:', error);
+      return {
+        success: false,
+        time: performance.now() - startTime,
+        error: error.message,
+      };
+    }
+  }
+
+  async getUserById(id: string) {
+    const startTime = performance.now();
+    
+    try {
+      const db = await this.getDb();
+      const user = await db.getFirstAsync(
+        'SELECT * FROM users WHERE id = ?', 
+        [id]
+      ) as User | undefined;
+
+      return {
+        success: true,
+        time: performance.now() - startTime,
+        user: user,
+        error: user ? undefined : 'Usuário não encontrado'
+      };
+
+    } catch (error: any) {
+      console.error('Erro em getUserById:', error);
+      return {
+        success: false,
+        time: performance.now() - startTime,
+        error: error.message
+      };
+    }
+  }
+
+  async getAllUsers() {
+    const startTime = performance.now();
+    
+    try {
+      const db = await this.getDb();
+      const users = await db.getAllAsync(
+        'SELECT * FROM users ORDER BY createdAt DESC'
+      ) as User[];
+
+      return {
+        success: true,
+        time: performance.now() - startTime,
+        users: users
+      };
+    } catch (error: any) {
+      console.error('Erro em getAllUsers:', error);
+      return {
+        success: false,
+        time: performance.now() - startTime,
         users: [],
-        error: 'SQLite não inicializado'
+        error: error.message
       };
     }
-
-    return new Promise((resolve) => {
-      this.db.transaction(
-        (tx: any) => {
-          tx.executeSql(
-            'SELECT * FROM users ORDER BY createdAt DESC',
-            [],
-            (_: any, { rows }: any) => {
-              const endTime = performance.now();
-              const users: User[] = [];
-              for (let i = 0; i < rows.length; i++) {
-                users.push(rows.item(i));
-              }
-              resolve({ 
-                success: true, 
-                time: endTime - startTime,
-                users 
-              });
-            },
-            (_: any, error: any) => {
-              const endTime = performance.now();
-              resolve({ 
-                success: false, 
-                time: endTime - startTime,
-                users: [],
-                error: error.message
-              });
-              return false;
-            }
-          );
-        },
-        (error: any) => {
-          const endTime = performance.now();
-          resolve({ 
-            success: false, 
-            time: endTime - startTime,
-            users: [],
-            error: error.message
-          });
-        }
-      );
-    });
   }
 
-  /**
-   * Atualiza o saldo de um usuário.
-   */
-  async updateUserBalance(userId: string, newBalance: number): Promise<{ success: boolean; error?: string }> {
-    if (!this.initialized) {
-      return { success: false, error: 'SQLite não inicializado' };
+  async updateUserBalance(userId: string, newBalance: number) {
+    try {
+      const db = await this.getDb();
+
+      const result = await db.runAsync(
+        'UPDATE users SET balance = ? WHERE id = ?',
+        [newBalance, userId]
+      );
+      
+      if (result.changes && result.changes > 0) {
+        return { success: true };
+      } else {
+        return { success: false, error: 'Usuário não encontrado ou saldo inalterado' };
+      }
+
+    } catch (error: any) {
+      console.error('Erro em updateUserBalance:', error);
+      return { success: false, error: error.message };
     }
-
-    return new Promise((resolve) => {
-      this.db.transaction(
-        (tx: any) => {
-          tx.executeSql(
-            'UPDATE users SET balance = ? WHERE id = ?',
-            [newBalance, userId],
-            () => resolve({ success: true }),
-            (_: any, error: any) => {
-              resolve({ success: false, error: error.message });
-              return false;
-            }
-          );
-        },
-        (error: any) => {
-          resolve({ success: false, error: error.message });
-        }
-      );
-    });
   }
 
-  // --- MÉTODOS DE TRANSAÇÃO (NOVOS) ---
-
-  /**
-   * Cria uma nova transação e atualiza o saldo do usuário.
-   * Executado dentro de uma única transação SQLite.
-   */
-  async createTransaction(transaction: Omit<Transaction, 'id' | 'createdAt'>): Promise<{ success: boolean; time: number; transaction?: Transaction; error?: string }> {
+  async getTransactionsByUserId(userId: string) {
     const startTime = performance.now();
     
-    if (!this.initialized) {
-      const endTime = performance.now();
+    try {
+      const db = await this.getDb();
+      const transactions = await db.getAllAsync(
+        `SELECT * FROM transactions WHERE userId = ? ORDER BY createdAt DESC LIMIT 50`,
+        [userId]
+      ) as Transaction[];
+
       return {
-        success: false,
-        time: endTime - startTime,
-        error: 'SQLite não inicializado'
+        success: true,
+        time: performance.now() - startTime,
+        transactions: transactions
       };
-    }
-
-    return new Promise((resolve) => {
-      this.db.transaction(
-        (tx: any) => {
-          // 1. Verifica se o usuário existe
-          tx.executeSql(
-            'SELECT * FROM users WHERE id = ?',
-            [transaction.userId],
-            (_: any, { rows }: any) => {
-              if (rows.length === 0) {
-                const endTime = performance.now();
-                resolve({
-                  success: false,
-                  time: endTime - startTime,
-                  error: 'Usuário não encontrado'
-                });
-                return;
-              }
-
-              const user = rows.item(0);
-              let newBalance = user.balance;
-
-              // 2. Calcula o novo saldo e verifica a regra de negócio (saque/withdraw)
-              if (transaction.type === 'deposit') {
-                newBalance += transaction.amount;
-              } else if (transaction.type === 'withdraw') {
-                if (user.balance < transaction.amount) {
-                  const endTime = performance.now();
-                  resolve({
-                    success: false,
-                    time: endTime - startTime,
-                    error: 'Saldo insuficiente'
-                  });
-                  return;
-                }
-                newBalance -= transaction.amount;
-              }
-              // OBS: 'payment' e 'transfer' não alteram o saldo aqui (implementação mais complexa)
-
-              // 3. Define a nova transação
-              const newTransaction: Transaction = {
-                ...transaction,
-                id: Date.now().toString(),
-                createdAt: new Date().toISOString(),
-              };
-
-              // 4. Atualiza o saldo do usuário
-              tx.executeSql(
-                'UPDATE users SET balance = ? WHERE id = ?',
-                [newBalance, transaction.userId],
-                (_: any) => {
-                  // 5. Insere a transação
-                  tx.executeSql(
-                    `INSERT INTO transactions (id, userId, type, amount, description, status, createdAt) 
-                     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-                    [
-                      newTransaction.id,
-                      newTransaction.userId,
-                      newTransaction.type,
-                      newTransaction.amount,
-                      newTransaction.description || '',
-                      newTransaction.status,
-                      newTransaction.createdAt
-                    ],
-                    (_: any, result: any) => {
-                      const endTime = performance.now();
-                      resolve({
-                        success: true,
-                        time: endTime - startTime,
-                        transaction: newTransaction
-                      });
-                    },
-                    (_: any, error: any) => {
-                      const endTime = performance.now();
-                      resolve({
-                        success: false,
-                        time: endTime - startTime,
-                        error: `Erro ao inserir transação: ${error.message}`
-                      });
-                      return false;
-                    }
-                  );
-                },
-                (_: any, error: any) => {
-                  const endTime = performance.now();
-                  resolve({
-                    success: false,
-                    time: endTime - startTime,
-                    error: `Erro ao atualizar saldo do usuário: ${error.message}`
-                  });
-                  return false;
-                }
-              );
-            },
-            (_: any, error: any) => {
-              const endTime = performance.now();
-              resolve({
-                success: false,
-                time: endTime - startTime,
-                error: `Erro ao buscar usuário: ${error.message}`
-              });
-              return false;
-            }
-          );
-        },
-        (error: any) => {
-          const endTime = performance.now();
-          resolve({
-            success: false,
-            time: endTime - startTime,
-            error: `Erro de Transação SQLite: ${error.message}`
-          });
-        }
-      );
-    });
-  }
-
-  /**
-   * Busca as transações de um usuário específico (limitado a 50).
-   */
-  async getTransactionsByUserId(userId: string): Promise<{ success: boolean; time: number; transactions: Transaction[]; error?: string }> {
-    const startTime = performance.now();
-    
-    if (!this.initialized) {
-      const endTime = performance.now();
+    } catch (error: any) {
+      console.error('Erro em getTransactionsByUserId:', error);
       return {
         success: false,
-        time: endTime - startTime,
+        time: performance.now() - startTime,
         transactions: [],
-        error: 'SQLite não inicializado'
+        error: error.message
       };
     }
-
-    return new Promise((resolve) => {
-      this.db.transaction(
-        (tx: any) => {
-          tx.executeSql(
-            `SELECT * FROM transactions 
-             WHERE userId = ? 
-             ORDER BY createdAt DESC
-             LIMIT 50`,
-            [userId],
-            (_: any, { rows }: any) => {
-              const endTime = performance.now();
-              const transactions: Transaction[] = [];
-              for (let i = 0; i < rows.length; i++) {
-                transactions.push(rows.item(i));
-              }
-              resolve({
-                success: true,
-                time: endTime - startTime,
-                transactions
-              });
-            },
-            (_: any, error: any) => {
-              const endTime = performance.now();
-              resolve({
-                success: false,
-                time: endTime - startTime,
-                transactions: [],
-                error: error.message
-              });
-              return false;
-            }
-          );
-        },
-        (error: any) => {
-          const endTime = performance.now();
-          resolve({
-            success: false,
-            time: endTime - startTime,
-            transactions: [],
-            error: error.message
-          });
-        }
-      );
-    });
   }
 
-  /**
-   * Limpa todas as tabelas: 'transactions' e 'users'.
-   */
-  async clearAll(): Promise<{ success: boolean; error?: string }> {
-    if (!this.initialized) {
-      return { success: false, error: 'SQLite não inicializado' };
+  async clearAll() {
+    try {
+      const db = await this.getDb();
+      await db.execAsync('DELETE FROM transactions');
+      await db.execAsync('DELETE FROM users');
+      return { success: true };
+    } catch (error: any) {
+      console.error('Erro em clearAll:', error);
+      return { success: false, error: error.message };
     }
-
-    return new Promise((resolve) => {
-      this.db.transaction(
-        (tx: any) => {
-          // Deleta transações primeiro (para manter a integridade referencial)
-          tx.executeSql('DELETE FROM transactions', [], () => {}); 
-          tx.executeSql(
-            'DELETE FROM users',
-            [],
-            () => resolve({ success: true }),
-            (_: any, error: any) => {
-              resolve({ success: false, error: error.message });
-              return false;
-            }
-          );
-        },
-        (error: any) => {
-          resolve({ success: false, error: error.message });
-        }
-      );
-    });
   }
 }
 
-// --- CONFIGURAÇÃO DO SERVIÇO EXPORTADO ---
-
-// Adapte o WebSQLiteService para incluir os novos métodos (se aplicável ao seu projeto web)
-let SQLiteImplementation: any; // O tipo real seria NativeSQLiteService | WebSQLiteService
+// Instanciação do serviço
+let SQLiteImplementation: any;
 
 if (isWeb) {
-  // A WebSQLiteService deve ter sido atualizada no seu outro arquivo 
-  // para ter os métodos: saveUser, getUserByEmail, getUserById, createTransaction, 
-  // getTransactionsByUserId, updateUserBalance, getAllUsers, clearAll.
   SQLiteImplementation = new WebSQLiteService();
 } else {
   SQLiteImplementation = new NativeSQLiteService();
 }
 
-/**
- * Serviço SQLite de Alto Nível (Facade/Adaptador).
- * Garante a compatibilidade entre Mobile e Web.
- */
+// Exportação do serviço
 export const SQLiteService = {
+  // Método de inicialização aprimorado
   async init(): Promise<void> {
-    return SQLiteImplementation.init();
+    try {
+      await SQLiteImplementation.init();
+      console.log('✅ SQLiteService inicializado com sucesso');
+    } catch (error) {
+      console.error('❌ Falha na inicialização do SQLiteService:', error);
+      throw error;
+    }
   },
 
-  async saveUser(user: Omit<User, 'id' | 'createdAt' | 'balance'>): Promise<{ success: boolean; time: number; user?: User; error?: string }> {
-    return SQLiteImplementation.saveUser(user);
+  // Método para verificar status do banco
+  async checkStatus() {
+    if (SQLiteImplementation.checkDatabaseStatus) {
+      return await SQLiteImplementation.checkDatabaseStatus();
+    }
+    return { isInitialized: true, hasDbInstance: true, isWeb };
   },
 
-  async getUserByEmail(email: string): Promise<{ success: boolean; time: number; user?: User; error?: string }> {
-    return SQLiteImplementation.getUserByEmail(email);
-  },
-  
-  // Novo método
-  async getUserById(id: string): Promise<{ success: boolean; time: number; user?: User; error?: string }> {
-    return SQLiteImplementation.getUserById(id);
-  },
-
-  // Novo método
-  async createTransaction(transaction: Omit<Transaction, 'id' | 'createdAt'>): Promise<{ success: boolean; time: number; transaction?: Transaction; error?: string }> {
-    return SQLiteImplementation.createTransaction(transaction);
+  // Método para testar conexão
+  async testConnection() {
+    if (SQLiteImplementation.testConnection) {
+      return await SQLiteImplementation.testConnection();
+    }
+    return true;
   },
 
-  // Novo método
-  async getTransactionsByUserId(userId: string): Promise<{ success: boolean; time: number; transactions: Transaction[]; error?: string }> {
-    return SQLiteImplementation.getTransactionsByUserId(userId);
-  },
+  // Demais métodos...
+  saveUser: SQLiteImplementation.saveUser.bind(SQLiteImplementation),
+  getUserByEmail: SQLiteImplementation.getUserByEmail.bind(SQLiteImplementation),
+  getUserById: SQLiteImplementation.getUserById.bind(SQLiteImplementation),
+  createTransaction: SQLiteImplementation.createTransaction.bind(SQLiteImplementation),
+  getTransactionsByUserId: SQLiteImplementation.getTransactionsByUserId.bind(SQLiteImplementation),
+  updateUserBalance: SQLiteImplementation.updateUserBalance.bind(SQLiteImplementation),
+  getAllUsers: SQLiteImplementation.getAllUsers.bind(SQLiteImplementation),
+  clearAll: SQLiteImplementation.clearAll.bind(SQLiteImplementation),
 
-  // Novo método
-  async updateUserBalance(userId: string, newBalance: number): Promise<{ success: boolean; error?: string }> {
-    return SQLiteImplementation.updateUserBalance(userId, newBalance);
-  },
-
-  async getAllUsers(): Promise<{ success: boolean; time: number; users: User[]; error?: string }> {
-    return SQLiteImplementation.getAllUsers();
-  },
-
-  async clearAll(): Promise<{ success: boolean; error?: string }> {
-    return SQLiteImplementation.clearAll();
-  },
-
-  isWeb(): boolean {
-    return isWeb;
-  }
+  isWeb: () => isWeb
 };
