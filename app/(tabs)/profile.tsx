@@ -1,4 +1,4 @@
-// app/(tabs)/profile.tsx (ATUALIZADO)
+// app/(tabs)/profile.tsx (ATUALIZADO - FRONT-END MELHORADO)
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -12,9 +12,9 @@ import {
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useFocusEffect } from "expo-router";
-import { SQLiteService, Transaction } from "../../services/SQLiteService"; // ← Adicione Transaction
+import { SQLiteService, Transaction } from "../../services/SQLiteService";
 import { formatCurrency } from "../../utils/formatters";
-import { Ionicons } from "@expo/vector-icons"; // ← Importe Ionicons
+import { Ionicons } from "@expo/vector-icons";
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -22,7 +22,7 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
-  const [transactions, setTransactions] = useState<Transaction[]>([]); // ← Novo estado
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
 
   useFocusEffect(
     React.useCallback(() => {
@@ -38,25 +38,20 @@ export default function ProfileScreen() {
         return;
       }
 
-      // Inicializar o SQLite
       await SQLiteService.init();
-
       const userResult = await SQLiteService.getUserByEmail(loggedUserEmail);
+      
       if (userResult.success && userResult.user) {
         setUser(userResult.user);
-
-        // Carrega transações do usuário
         const transactionsResult = await SQLiteService.getTransactionsByUserId(userResult.user.id);
-        console.log("transactionsResult", transactionsResult);
+        
         if (transactionsResult.success) {
-          // Filtra apenas apostas e vitórias (deposit e withdraw)
           const casinoTransactions = transactionsResult.transactions.filter(
             t => t.description.includes("Cassino") ||
               t.description.includes("Slot") ||
               t.description.includes("Aposta") ||
               t.description.includes("Vitória")
           );
-          console.log("casinoTransactions", casinoTransactions);
           setTransactions(casinoTransactions);
         }
       }
@@ -74,16 +69,28 @@ export default function ProfileScreen() {
   };
 
   const handleLogout = async () => {
-    try {
-      await AsyncStorage.removeItem("@loggedUser");
-      await AsyncStorage.removeItem("@loggedUserEmail");
-      router.replace("/login");
-    } catch (error) {
-      console.error("Erro ao fazer logout:", error);
-    }
+    Alert.alert(
+      "Sair da Conta",
+      "Tem certeza que deseja sair?",
+      [
+        { text: "Cancelar", style: "cancel" },
+        { 
+          text: "Sair", 
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await AsyncStorage.removeItem("@loggedUser");
+              await AsyncStorage.removeItem("@loggedUserEmail");
+              router.replace("/login");
+            } catch (error) {
+              console.error("Erro ao fazer logout:", error);
+            }
+          }
+        }
+      ]
+    );
   };
 
-  // Função para calcular estatísticas
   const getStats = () => {
     const wins = transactions.filter(t =>
       t.type === 'deposit' && t.description.includes("Vitória")
@@ -102,7 +109,8 @@ export default function ProfileScreen() {
       netResult,
       winCount: wins.length,
       lossCount: losses.length,
-      totalPlays: wins.length + losses.length
+      totalPlays: wins.length + losses.length,
+      winRate: wins.length > 0 ? (wins.length / (wins.length + losses.length) * 100).toFixed(1) : "0.0"
     };
   };
 
@@ -112,7 +120,7 @@ export default function ProfileScreen() {
   if (loading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.background }]}>
-        <ActivityIndicator size="large" color={theme.buttonBg} />
+        <ActivityIndicator size="large" color={theme.primary} />
         <Text style={{ color: theme.textSecondary, marginTop: 10 }}>
           Carregando perfil...
         </Text>
@@ -122,23 +130,36 @@ export default function ProfileScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Cabeçalho */}
+      {/* Cabeçalho Aprimorado */}
       <View style={styles.header}>
-        <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
-          Perfil 👤
-        </Text>
-        <View style={styles.headerButtons}>
+        <View style={styles.headerContent}>
+          <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
+            👤 Meu Perfil
+          </Text>
+          <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>
+            Gerencie sua conta e visualize estatísticas
+          </Text>
+        </View>
+        <View style={styles.headerActions}>
           <TouchableOpacity
-            style={[styles.themeButton, { backgroundColor: theme.card, borderColor: theme.border }]}
+            style={[styles.iconButton, { backgroundColor: theme.card }]}
             onPress={() => setIsDarkMode(!isDarkMode)}
           >
-            <Text style={{ fontSize: 20 }}>{isDarkMode ? "☀️" : "🌙"}</Text>
+            <Ionicons 
+              name={isDarkMode ? "sunny" : "moon"} 
+              size={22} 
+              color={theme.textPrimary} 
+            />
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.refreshButton, { backgroundColor: theme.card }]}
+            style={[styles.iconButton, { backgroundColor: theme.card }]}
             onPress={onRefresh}
           >
-            <Ionicons name="refresh" size={20} color={theme.textPrimary} />
+            <Ionicons 
+              name="refresh-circle" 
+              size={22} 
+              color={theme.primary} 
+            />
           </TouchableOpacity>
         </View>
       </View>
@@ -149,274 +170,388 @@ export default function ProfileScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={theme.buttonBg}
+            colors={[theme.primary]}
+            tintColor={theme.primary}
           />
         }
         showsVerticalScrollIndicator={false}
       >
-        {/* Card de Informações */}
-        <View style={[styles.infoCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <View style={styles.avatarContainer}>
-            <Text style={[styles.avatarText, { backgroundColor: theme.buttonBg }]}>
-              {user?.name?.charAt(0).toUpperCase() || "U"}
-            </Text>
+        {/* Card de Informações do Usuário - REDESENHADO */}
+        <View style={[styles.profileCard, { backgroundColor: theme.card }]}>
+          <View style={styles.profileHeader}>
+            <View style={[styles.avatarContainer, { backgroundColor: `${theme.primary}20` }]}>
+              <Text style={[styles.avatarText, { color: theme.primary }]}>
+                {user?.name?.charAt(0).toUpperCase() || "U"}
+              </Text>
+            </View>
+            <View style={styles.profileInfo}>
+              <Text style={[styles.userName, { color: theme.textPrimary }]}>
+                {user?.name || "Usuário"}
+              </Text>
+              <Text style={[styles.userEmail, { color: theme.textSecondary }]}>
+                {user?.email || "email@exemplo.com"}
+              </Text>
+              <View style={styles.userBadge}>
+                <Ionicons name="shield-checkmark" size={12} color={theme.success} />
+                <Text style={[styles.badgeText, { color: theme.success }]}>
+                  Conta Verificada
+                </Text>
+              </View>
+            </View>
           </View>
 
-          <Text style={[styles.userName, { color: theme.textPrimary }]}>
-            {user?.name || "Usuário"}
-          </Text>
-          <Text style={[styles.userEmail, { color: theme.textSecondary }]}>
-            {user?.email || "email@exemplo.com"}
-          </Text>
-
-          {/* Saldo */}
-          <View style={styles.balanceContainer}>
-            <Text style={[styles.balanceLabel, { color: theme.textSecondary }]}>
-              Saldo Atual
-            </Text>
+          {/* Saldo em Destaque */}
+          <View style={[styles.balanceCard, { backgroundColor: `${theme.primary}10` }]}>
+            <View style={styles.balanceHeader}>
+              <Ionicons name="wallet-outline" size={20} color={theme.textSecondary} />
+              <Text style={[styles.balanceLabel, { color: theme.textSecondary }]}>
+                Saldo Disponível
+              </Text>
+            </View>
             <Text style={[styles.balanceValue, { color: theme.textPrimary }]}>
               {formatCurrency(user?.balance || 0)}
             </Text>
-          </View>
-
-          {/* ID do Usuário */}
-          <View style={styles.idContainer}>
-            <Text style={[styles.idLabel, { color: theme.textSecondary }]}>
-              ID do Usuário:
-            </Text>
-            <Text style={[styles.idValue, { color: theme.textSecondary }]}>
-              {user?.id?.substring(0, 8) || "N/A"}
-            </Text>
-          </View>
-
-          {/* Data de Criação */}
-          <View style={styles.dateContainer}>
-            <Text style={[styles.dateLabel, { color: theme.textSecondary }]}>
-              Cadastrado em:
-            </Text>
-            <Text style={[styles.dateValue, { color: theme.textSecondary }]}>
-              {new Date(user?.createdAt || new Date()).toLocaleDateString("pt-BR")}
-            </Text>
+            <View style={styles.balanceFooter}>
+              <View style={styles.balanceInfo}>
+                <Ionicons name="calendar-outline" size={14} color={theme.textSecondary} />
+                <Text style={[styles.balanceInfoText, { color: theme.textSecondary }]}>
+                  Desde {new Date(user?.createdAt || new Date()).toLocaleDateString("pt-BR")}
+                </Text>
+              </View>
+              <View style={styles.balanceInfo}>
+                <Ionicons name="key-outline" size={14} color={theme.textSecondary} />
+                <Text style={[styles.balanceInfoText, { color: theme.textSecondary }]}>
+                  ID: {user?.id?.substring(0, 8) || "N/A"}
+                </Text>
+              </View>
+            </View>
           </View>
         </View>
 
-        {/* Estatísticas do Jogo (NOVO) */}
-        <View style={[styles.statsCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <Text style={[styles.statsTitle, { color: theme.textPrimary }]}>
-            📊 Estatísticas do Cassino
+        {/* Estatísticas - LAYOUT MELHORADO */}
+        <View style={styles.sectionHeader}>
+          <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+            📈 Estatísticas do Jogo
           </Text>
+          <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>
+            Desempenho no cassino
+          </Text>
+        </View>
 
-          <View style={styles.statsGrid}>
-            <View style={styles.statItem}>
-              <Text style={[styles.statValue, { color: '#10B981' }]}>
+        <View style={styles.statsContainer}>
+          {/* Cartões de Estatísticas */}
+          <View style={styles.statsRow}>
+            <View style={[styles.statCard, { backgroundColor: theme.card }]}>
+              <View style={[styles.statIcon, { backgroundColor: `${theme.success}15` }]}>
+                <Ionicons name="trophy" size={24} color={theme.success} />
+              </View>
+              <Text style={[styles.statNumber, { color: theme.textPrimary }]}>
                 {stats.winCount}
               </Text>
               <Text style={[styles.statLabel, { color: theme.textSecondary }]}>
                 Vitórias
               </Text>
+              <Text style={[styles.statRate, { color: theme.success }]}>
+                {stats.winRate}% de taxa
+              </Text>
             </View>
 
-            <View style={styles.statItem}>
-              <Text style={[styles.statValue, { color: '#EF4444' }]}>
+            <View style={[styles.statCard, { backgroundColor: theme.card }]}>
+              <View style={[styles.statIcon, { backgroundColor: `${theme.error}15` }]}>
+                <Ionicons name="trending-down" size={24} color={theme.error} />
+              </View>
+              <Text style={[styles.statNumber, { color: theme.textPrimary }]}>
                 {stats.lossCount}
               </Text>
               <Text style={[styles.statLabel, { color: theme.textSecondary }]}>
                 Derrotas
               </Text>
-            </View>
-
-            <View style={styles.statItem}>
-              <Text style={[styles.statValue, { color: theme.textPrimary }]}>
-                {stats.totalPlays}
-              </Text>
-              <Text style={[styles.statLabel, { color: theme.textSecondary }]}>
-                Total Jogos
+              <Text style={[styles.statSubLabel, { color: theme.textSecondary }]}>
+                Total de jogos: {stats.totalPlays}
               </Text>
             </View>
           </View>
 
-          <View style={styles.moneyStats}>
-            <View style={styles.moneyStat}>
-              <Ionicons name="trending-up" size={20} color="#10B981" />
-              <Text style={[styles.moneyLabel, { color: theme.textSecondary }]}>Ganhou:</Text>
-              <Text style={[styles.moneyValue, { color: '#10B981' }]}>
-                {formatCurrency(stats.totalWon)}
+          {/* Resumo Financeiro */}
+          <View style={[styles.financialSummary, { backgroundColor: theme.card }]}>
+            <View style={styles.financialHeader}>
+              <Ionicons name="cash-outline" size={20} color={theme.textPrimary} />
+              <Text style={[styles.financialTitle, { color: theme.textPrimary }]}>
+                Resumo Financeiro
               </Text>
             </View>
+            
+            <View style={styles.financialItems}>
+              <View style={styles.financialItem}>
+                <View style={styles.financialItemLeft}>
+                  <View style={[styles.itemIcon, { backgroundColor: `${theme.success}15` }]}>
+                    <Ionicons name="arrow-down-circle" size={16} color={theme.success} />
+                  </View>
+                  <Text style={[styles.itemLabel, { color: theme.textSecondary }]}>Ganhos</Text>
+                </View>
+                <Text style={[styles.itemValue, { color: theme.success }]}>
+                  +{formatCurrency(stats.totalWon)}
+                </Text>
+              </View>
 
-            <View style={styles.moneyStat}>
-              <Ionicons name="trending-down" size={20} color="#EF4444" />
-              <Text style={[styles.moneyLabel, { color: theme.textSecondary }]}>Perdeu:</Text>
-              <Text style={[styles.moneyValue, { color: '#EF4444' }]}>
-                {formatCurrency(stats.totalLost)}
-              </Text>
-            </View>
+              <View style={styles.financialItem}>
+                <View style={styles.financialItemLeft}>
+                  <View style={[styles.itemIcon, { backgroundColor: `${theme.error}15` }]}>
+                    <Ionicons name="arrow-up-circle" size={16} color={theme.error} />
+                  </View>
+                  <Text style={[styles.itemLabel, { color: theme.textSecondary }]}>Perdas</Text>
+                </View>
+                <Text style={[styles.itemValue, { color: theme.error }]}>
+                  -{formatCurrency(stats.totalLost)}
+                </Text>
+              </View>
 
-            <View style={[styles.moneyStat, styles.netResult]}>
-              <Ionicons
-                name={stats.netResult >= 0 ? "happy" : "sad"}
-                size={20}
-                color={stats.netResult >= 0 ? '#10B981' : '#EF4444'}
-              />
-              <Text style={[styles.moneyLabel, { color: theme.textSecondary }]}>Resultado:</Text>
-              <Text style={[
-                styles.moneyValue,
-                { color: stats.netResult >= 0 ? '#10B981' : '#EF4444' }
-              ]}>
-                {formatCurrency(stats.netResult)}
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Histórico de Transações (NOVO) */}
-        <View style={[styles.historyCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <View style={styles.historyHeader}>
-            <Text style={[styles.historyTitle, { color: theme.textPrimary }]}>
-              🎰 Histórico do Cassino
-            </Text>
-            <Text style={[styles.historySubtitle, { color: theme.textSecondary }]}>
-              Últimas {transactions.length} transações
-            </Text>
-          </View>
-
-          {transactions.length === 0 ? (
-            <View style={styles.emptyHistory}>
-              <Ionicons name="game-controller-outline" size={50} color={theme.textSecondary} />
-              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-                Nenhuma jogada registrada ainda
-              </Text>
-              <Text style={[styles.emptySubtext, { color: theme.textSecondary }]}>
-                Vá até o cassino e comece a jogar!
-              </Text>
-            </View>
-          ) : (
-            transactions.slice(0, 10).map((transaction) => (
-              <View
-                key={transaction.id}
-                style={[
-                  styles.transactionItem,
-                  { borderBottomColor: theme.border }
-                ]}
-              >
-                <View style={styles.transactionLeft}>
+              <View style={[styles.financialItem, styles.netResultItem]}>
+                <View style={styles.financialItemLeft}>
                   <View style={[
-                    styles.transactionIcon,
-                    { backgroundColor: transaction.type === 'deposit' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)' }
+                    styles.itemIcon, 
+                    { backgroundColor: stats.netResult >= 0 ? `${theme.success}15` : `${theme.error}15` }
                   ]}>
-                    <Ionicons
-                      name={transaction.type === 'deposit' ? "arrow-down-circle" : "arrow-up-circle"}
-                      size={20}
-                      color={transaction.type === 'deposit' ? '#10B981' : '#EF4444'}
+                    <Ionicons 
+                      name={stats.netResult >= 0 ? "happy" : "sad"} 
+                      size={16} 
+                      color={stats.netResult >= 0 ? theme.success : theme.error} 
                     />
                   </View>
-                  <View>
-                    <Text style={[styles.transactionDesc, { color: theme.textPrimary }]}>
-                      {transaction.description}
-                    </Text>
-                    <Text style={[styles.transactionDate, { color: theme.textSecondary }]}>
-                      {new Date(transaction.createdAt).toLocaleDateString('pt-BR', {
-                        day: '2-digit',
-                        month: '2-digit',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </Text>
-                  </View>
+                  <Text style={[styles.itemLabel, { color: theme.textSecondary }]}>Saldo Final</Text>
                 </View>
-
-                <View style={styles.transactionRight}>
-                  <Text style={[
-                    styles.transactionAmount,
-                    { color: transaction.type === 'deposit' ? '#10B981' : '#EF4444' }
-                  ]}>
-                    {transaction.type === 'deposit' ? '+' : '-'}
-                    {formatCurrency(transaction.amount)}
-                  </Text>
-                  <View style={[
-                    styles.statusBadge,
-                    { backgroundColor: transaction.status === 'completed' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)' }
-                  ]}>
-                    <Text style={[
-                      styles.statusText,
-                      { color: transaction.status === 'completed' ? '#10B981' : '#EF4444' }
-                    ]}>
-                      {transaction.status === 'completed' ? 'Concluído' : 'Pendente'}
-                    </Text>
-                  </View>
-                </View>
+                <Text style={[
+                  styles.itemValue, 
+                  { color: stats.netResult >= 0 ? theme.success : theme.error }
+                ]}>
+                  {stats.netResult >= 0 ? '+' : ''}{formatCurrency(stats.netResult)}
+                </Text>
               </View>
-            ))
-          )}
+            </View>
+          </View>
+        </View>
 
-          {transactions.length > 10 && (
-            <TouchableOpacity
-              style={styles.viewMoreButton}
-              onPress={() => Alert.alert("Em breve", "Histórico completo em desenvolvimento!")}
-            >
-              <Text style={[styles.viewMoreText, { color: theme.buttonBg }]}>
-                Ver histórico completo ({transactions.length})
+        {/* Histórico de Transações - MELHORADO */}
+        <View style={styles.sectionHeader}>
+          <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+            🎮 Histórico de Jogos
+          </Text>
+          <Text style={[styles.sectionSubtitle, { color: theme.textSecondary }]}>
+            Últimas atividades
+          </Text>
+        </View>
+
+        <View style={[styles.historyCard, { backgroundColor: theme.card }]}>
+          {transactions.length === 0 ? (
+            <View style={styles.emptyState}>
+              <View style={[styles.emptyIcon, { backgroundColor: `${theme.primary}10` }]}>
+                <Ionicons name="game-controller" size={40} color={theme.primary} />
+              </View>
+              <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>
+                Nenhuma jogada registrada
               </Text>
-              <Ionicons name="chevron-forward" size={16} color={theme.buttonBg} />
-            </TouchableOpacity>
+              <Text style={[styles.emptyDescription, { color: theme.textSecondary }]}>
+                Suas jogadas no cassino aparecerão aqui
+              </Text>
+              <TouchableOpacity
+                style={[styles.emptyButton, { backgroundColor: theme.primary }]}
+                onPress={() => router.push("/")}
+              >
+                <Ionicons name="play" size={16} color="#FFF" />
+                <Text style={styles.emptyButtonText}>Começar a Jogar</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
+              {transactions.slice(0, 5).map((transaction) => (
+                <View
+                  key={transaction.id}
+                  style={[styles.transactionCard, { backgroundColor: theme.background }]}
+                >
+                  <View style={styles.transactionHeader}>
+                    <View style={styles.transactionType}>
+                      <View style={[
+                        styles.typeIcon,
+                        { backgroundColor: transaction.type === 'deposit' ? `${theme.success}15` : `${theme.error}15` }
+                      ]}>
+                        <Ionicons
+                          name={transaction.type === 'deposit' ? "trending-up" : "trending-down"}
+                          size={16}
+                          color={transaction.type === 'deposit' ? theme.success : theme.error}
+                        />
+                      </View>
+                      <View>
+                        <Text style={[styles.transactionTitle, { color: theme.textPrimary }]}>
+                          {transaction.description}
+                        </Text>
+                        <Text style={[styles.transactionTime, { color: theme.textSecondary }]}>
+                          {new Date(transaction.createdAt).toLocaleDateString('pt-BR', {
+                            day: '2-digit',
+                            month: 'short',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={[
+                      styles.transactionAmount,
+                      { color: transaction.type === 'deposit' ? theme.success : theme.error }
+                    ]}>
+                      {transaction.type === 'deposit' ? '+' : '-'}
+                      {formatCurrency(transaction.amount)}
+                    </Text>
+                  </View>
+                  
+                  <View style={styles.transactionFooter}>
+                    <View style={[
+                      styles.statusBadge,
+                      { backgroundColor: transaction.status === 'completed' ? `${theme.success}15` : `${theme.warning}15` }
+                    ]}>
+                      <Ionicons
+                        name={transaction.status === 'completed' ? "checkmark-circle" : "time-outline"}
+                        size={12}
+                        color={transaction.status === 'completed' ? theme.success : theme.warning}
+                      />
+                      <Text style={[
+                        styles.statusText,
+                        { color: transaction.status === 'completed' ? theme.success : theme.warning }
+                      ]}>
+                        {transaction.status === 'completed' ? 'Concluído' : 'Pendente'}
+                      </Text>
+                    </View>
+                    <Text style={[styles.transactionId, { color: theme.textSecondary }]}>
+                      #{transaction.id.substring(0, 6)}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+
+              {transactions.length > 5 && (
+                <TouchableOpacity
+                  style={styles.viewAllButton}
+                  onPress={() => Alert.alert("Em breve", "Histórico completo em desenvolvimento!")}
+                >
+                  <Text style={[styles.viewAllText, { color: theme.primary }]}>
+                    Ver todas as transações ({transactions.length})
+                  </Text>
+                  <Ionicons name="chevron-forward" size={16} color={theme.primary} />
+                </TouchableOpacity>
+              )}
+            </>
           )}
         </View>
 
-        {/* Botões de Ação */}
-        <View style={[styles.actionsCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        {/* Ações Rápidas */}
+        <View style={styles.sectionHeader}>
+          <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+            ⚡ Ações Rápidas
+          </Text>
+        </View>
+
+        <View style={styles.actionsGrid}>
           <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: theme.buttonBg }]}
+            style={[styles.actionButton, { backgroundColor: theme.card }]}
             onPress={() => router.push("/")}
           >
-            <Ionicons name="game-controller" size={20} color="#FFF" />
-            <Text style={styles.actionButtonText}>Voltar ao Cassino</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.actionButton, { backgroundColor: theme.buttonBg }]}
-            onPress={() => router.push("/deposit")}
-          >
-            <Ionicons name="add-circle" size={20} color="#FFF" />
-            <Text style={styles.actionButtonText}>Fazer Depósito</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.logoutButton, { borderColor: theme.withdrawColor }]}
-            onPress={handleLogout}
-          >
-            <Ionicons name="log-out-outline" size={20} color={theme.withdrawColor} />
-            <Text style={[styles.logoutButtonText, { color: theme.withdrawColor }]}>
-              Sair da Conta
+            <View style={[styles.actionIcon, { backgroundColor: `${theme.primary}15` }]}>
+              <Ionicons name="game-controller" size={24} color={theme.primary} />
+            </View>
+            <Text style={[styles.actionTitle, { color: theme.textPrimary }]}>Jogar</Text>
+            <Text style={[styles.actionDescription, { color: theme.textSecondary }]}>
+              Voltar ao cassino
             </Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: theme.card }]}
+            onPress={() => router.push("/deposit")}
+          >
+            <View style={[styles.actionIcon, { backgroundColor: `${theme.success}15` }]}>
+              <Ionicons name="add-circle" size={24} color={theme.success} />
+            </View>
+            <Text style={[styles.actionTitle, { color: theme.textPrimary }]}>Depositar</Text>
+            <Text style={[styles.actionDescription, { color: theme.textSecondary }]}>
+              Adicionar saldo
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: theme.card }]}
+            onPress={() => router.push("/withdraw")}
+          >
+            <View style={[styles.actionIcon, { backgroundColor: `${theme.warning}15` }]}>
+              <Ionicons name="cash-outline" size={24} color={theme.warning} />
+            </View>
+            <Text style={[styles.actionTitle, { color: theme.textPrimary }]}>Sacar</Text>
+            <Text style={[styles.actionDescription, { color: theme.textSecondary }]}>
+              Retirar ganhos
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionButton, { backgroundColor: theme.card }]}
+            onPress={() => Alert.alert("Em breve", "Histórico completo em desenvolvimento!")}
+          >
+            <View style={[styles.actionIcon, { backgroundColor: `${theme.info}15` }]}>
+              <Ionicons name="stats-chart" size={24} color={theme.info} />
+            </View>
+            <Text style={[styles.actionTitle, { color: theme.textPrimary }]}>Relatórios</Text>
+            <Text style={[styles.actionDescription, { color: theme.textSecondary }]}>
+              Análise detalhada
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Botão de Logout */}
+        <TouchableOpacity
+          style={[styles.logoutButton, { backgroundColor: `${theme.error}10` }]}
+          onPress={handleLogout}
+        >
+          <Ionicons name="log-out-outline" size={20} color={theme.error} />
+          <Text style={[styles.logoutText, { color: theme.error }]}>
+            Sair da Conta
+          </Text>
+        </TouchableOpacity>
+
+        <View style={styles.footer}>
+          <Text style={[styles.footerText, { color: theme.textSecondary }]}>
+            Última atualização: {new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+          </Text>
         </View>
       </ScrollView>
     </View>
   );
 }
 
-// Temas
+// Temas Aprimorados
 const darkTheme = {
-  background: "#0f0b1a",
-  card: "rgba(255,255,255,0.06)",
-  border: "rgba(255,255,255,0.15)",
-  textPrimary: "#ffffff",
-  textSecondary: "#cbd5e1",
-  buttonBg: "#3b82f6",
-  withdrawColor: "#ef4444",
+  background: "#0F172A",
+  card: "#1E293B",
+  primary: "#3B82F6",
+  success: "#10B981",
+  error: "#EF4444",
+  warning: "#F59E0B",
+  info: "#8B5CF6",
+  textPrimary: "#F1F5F9",
+  textSecondary: "#94A3B8",
+  border: "#334155",
 };
 
 const lightTheme = {
-  background: "#f1f5f9",
-  card: "#ffffff",
-  border: "#e2e8f0",
-  textPrimary: "#111827",
-  textSecondary: "#475569",
-  buttonBg: "#2563eb",
-  withdrawColor: "#ef4444",
+  background: "#F8FAFC",
+  card: "#FFFFFF",
+  primary: "#2563EB",
+  success: "#059669",
+  error: "#DC2626",
+  warning: "#D97706",
+  info: "#7C3AED",
+  textPrimary: "#0F172A",
+  textSecondary: "#64748B",
+  border: "#E2E8F0",
 };
 
-// Estilos (ATUALIZADOS)
+// Estilos Completamente Reformulados
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -426,281 +561,412 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
+  
+  // Header
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "flex-start",
     paddingHorizontal: 20,
     paddingTop: 60,
     paddingBottom: 20,
   },
+  headerContent: {
+    flex: 1,
+  },
   headerTitle: {
     fontSize: 28,
-    fontWeight: "bold",
+    fontWeight: "800",
+    marginBottom: 4,
   },
-  headerButtons: {
+  headerSubtitle: {
+    fontSize: 14,
+    opacity: 0.8,
+  },
+  headerActions: {
     flexDirection: "row",
-    gap: 10,
+    gap: 8,
   },
-  themeButton: {
-    borderRadius: 20,
-    padding: 6,
-    borderWidth: 1,
-    width: 40,
-    height: 40,
+  iconButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
   },
-  refreshButton: {
-    borderRadius: 20,
-    padding: 6,
-    width: 40,
-    height: 40,
-    justifyContent: "center",
-    alignItems: "center",
-  },
+  
+  // Scroll View
   scrollContainer: {
     paddingHorizontal: 20,
     paddingBottom: 40,
+    gap: 20,
   },
-  infoCard: {
-    borderRadius: 16,
-    padding: 24,
-    borderWidth: 1,
+  
+  // Profile Card
+  profileCard: {
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  profileHeader: {
+    flexDirection: "row",
     alignItems: "center",
     marginBottom: 20,
   },
   avatarContainer: {
-    marginBottom: 16,
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 16,
   },
   avatarText: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "white",
-    textAlign: "center",
-    lineHeight: 80,
-  },
-  userName: {
-    fontSize: 24,
-    fontWeight: "bold",
-    marginBottom: 4,
-  },
-  userEmail: {
-    fontSize: 16,
-    marginBottom: 20,
-  },
-  balanceContainer: {
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  balanceLabel: {
-    fontSize: 14,
-    marginBottom: 8,
-  },
-  balanceValue: {
     fontSize: 28,
     fontWeight: "bold",
   },
-  idContainer: {
-    width: "100%",
-    marginBottom: 12,
+  profileInfo: {
+    flex: 1,
   },
-  idLabel: {
-    fontSize: 12,
-    marginBottom: 4,
+  userName: {
+    fontSize: 22,
+    fontWeight: "700",
+    marginBottom: 2,
   },
-  idValue: {
+  userEmail: {
+    fontSize: 14,
+    marginBottom: 8,
+    opacity: 0.8,
+  },
+  userBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(16, 185, 129, 0.1)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: "flex-start",
+  },
+  badgeText: {
     fontSize: 11,
-    fontFamily: "monospace",
+    fontWeight: "600",
+    marginLeft: 4,
   },
-  dateContainer: {
-    width: "100%",
+  
+  // Balance Card
+  balanceCard: {
+    borderRadius: 16,
+    padding: 20,
   },
-  dateLabel: {
-    fontSize: 12,
-    marginBottom: 4,
+  balanceHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+    gap: 8,
   },
-  dateValue: {
+  balanceLabel: {
     fontSize: 14,
     fontWeight: "500",
   },
-  // NOVOS ESTILOS PARA ESTATÍSTICAS
-  statsCard: {
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    marginBottom: 20,
+  balanceValue: {
+    fontSize: 32,
+    fontWeight: "800",
+    marginBottom: 16,
   },
-  statsTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    marginBottom: 20,
-  },
-  statsGrid: {
+  balanceFooter: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 20,
-  },
-  statItem: {
     alignItems: "center",
-    flex: 1,
   },
-  statValue: {
+  balanceInfo: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  balanceInfoText: {
+    fontSize: 12,
+  },
+  
+  // Section Headers
+  sectionHeader: {
+    marginTop: 10,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  sectionSubtitle: {
+    fontSize: 13,
+  },
+  
+  // Stats
+  statsContainer: {
+    gap: 16,
+  },
+  statsRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  statCard: {
+    flex: 1,
+    borderRadius: 16,
+    padding: 16,
+    alignItems: "center",
+  },
+  statIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  statNumber: {
     fontSize: 24,
-    fontWeight: "bold",
+    fontWeight: "800",
     marginBottom: 4,
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: 13,
+    fontWeight: "500",
+    marginBottom: 2,
   },
-  moneyStats: {
-    gap: 12,
+  statRate: {
+    fontSize: 11,
+    fontWeight: "600",
   },
-  moneyStat: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 10,
-    backgroundColor: "rgba(0,0,0,0.05)",
+  statSubLabel: {
+    fontSize: 11,
+    opacity: 0.7,
   },
-  netResult: {
-    backgroundColor: "rgba(59, 130, 246, 0.1)",
-  },
-  moneyLabel: {
-    fontSize: 14,
-    marginLeft: 10,
-    marginRight: "auto",
-  },
-  moneyValue: {
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-  // NOVOS ESTILOS PARA HISTÓRICO
-  historyCard: {
+  
+  // Financial Summary
+  financialSummary: {
     borderRadius: 16,
     padding: 20,
-    borderWidth: 1,
-    marginBottom: 20,
   },
-  historyHeader: {
-    marginBottom: 20,
-  },
-  historyTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-  historySubtitle: {
-    fontSize: 12,
-    marginTop: 4,
-  },
-  emptyHistory: {
+  financialHeader: {
+    flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 40,
+    marginBottom: 20,
+    gap: 10,
   },
-  emptyText: {
+  financialTitle: {
     fontSize: 16,
-    marginTop: 10,
-    textAlign: "center",
+    fontWeight: "600",
   },
-  emptySubtext: {
-    fontSize: 12,
-    marginTop: 5,
-    textAlign: "center",
+  financialItems: {
+    gap: 14,
   },
-  transactionItem: {
+  financialItem: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingVertical: 12,
     borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.05)",
   },
-  transactionLeft: {
+  netResultItem: {
+    borderBottomWidth: 0,
+    paddingTop: 16,
+  },
+  financialItemLeft: {
     flexDirection: "row",
     alignItems: "center",
-    flex: 1,
-    marginRight: 10,
+    gap: 12,
   },
-  transactionIcon: {
+  itemIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  itemLabel: {
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  itemValue: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  
+  // History
+  historyCard: {
+    borderRadius: 16,
+    padding: 20,
+  },
+  emptyState: {
+    alignItems: "center",
+    paddingVertical: 40,
+  },
+  emptyIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    marginBottom: 8,
+  },
+  emptyDescription: {
+    fontSize: 14,
+    textAlign: "center",
+    marginBottom: 24,
+    opacity: 0.7,
+  },
+  emptyButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+    gap: 8,
+  },
+  emptyButtonText: {
+    color: "#FFF",
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  transactionCard: {
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+  },
+  transactionHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 12,
+  },
+  transactionType: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+  },
+  typeIcon: {
     width: 36,
     height: 36,
     borderRadius: 18,
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 10,
   },
-  transactionDesc: {
-    fontSize: 14,
-    fontWeight: "500",
-    marginBottom: 2,
-  },
-  transactionDate: {
-    fontSize: 11,
-  },
-  transactionRight: {
-    alignItems: "flex-end",
-  },
-  transactionAmount: {
-    fontSize: 16,
-    fontWeight: "bold",
+  transactionTitle: {
+    fontSize: 15,
+    fontWeight: "600",
     marginBottom: 4,
   },
+  transactionTime: {
+    fontSize: 12,
+    opacity: 0.7,
+  },
+  transactionAmount: {
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  transactionFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  statusText: {
-    fontSize: 10,
-    fontWeight: "600",
-  },
-  viewMoreButton: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
-    marginTop: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 20,
+    gap: 4,
   },
-  viewMoreText: {
-    fontSize: 14,
+  statusText: {
+    fontSize: 11,
     fontWeight: "600",
-    marginRight: 4,
   },
-  // Estilos existentes
-  actionsCard: {
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
+  transactionId: {
+    fontSize: 11,
+    fontFamily: "monospace",
+    opacity: 0.6,
   },
-  actionButton: {
+  viewAllButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 16,
     borderRadius: 12,
-    marginBottom: 12,
-    gap: 10,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: "rgba(59, 130, 246, 0.3)",
+    marginTop: 8,
+    gap: 6,
   },
-  actionButtonText: {
-    color: "#fff",
+  viewAllText: {
+    fontSize: 14,
     fontWeight: "600",
-    fontSize: 16,
   },
+  
+  // Actions Grid
+  actionsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+  },
+  actionButton: {
+    width: "48%",
+    borderRadius: 16,
+    padding: 16,
+    alignItems: "center",
+  },
+  actionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  actionTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    marginBottom: 4,
+    textAlign: "center",
+  },
+  actionDescription: {
+    fontSize: 11,
+    textAlign: "center",
+    opacity: 0.7,
+  },
+  
+  // Logout Button
   logoutButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 16,
     borderRadius: 12,
-    borderWidth: 1,
-    marginTop: 8,
     gap: 10,
+    marginTop: 10,
   },
-  logoutButtonText: {
-    fontWeight: "600",
+  logoutText: {
     fontSize: 16,
+    fontWeight: "600",
+  },
+  
+  // Footer
+  footer: {
+    alignItems: "center",
+    marginTop: 20,
+  },
+  footerText: {
+    fontSize: 12,
+    opacity: 0.6,
   },
 });
